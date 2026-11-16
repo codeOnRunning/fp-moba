@@ -2,12 +2,13 @@
 
 ## 当前状态
 
-- 项目已初始化 Git 仓库
-- 当前分支：`main`
-- 首次提交：`bd82429 feat: boss rush with 3-choice upgrades and player guide`
-- 已跟踪文件：115 个
+- **已发布：https://github.com/codeOnRunning/fp-moba**
+- 可见性：公开（Public）
+- 默认分支：`main`
+- 远端提交：`cbea8bcc feat: boss rush with 3-choice upgrades and player guide`
+- 已跟踪文件：116 个
 - `node_modules/`、`dist/`、`screenshots/`、Vite 日志已通过 `.gitignore` 排除
-- 当前环境无法连接 `github.com:443`，所以还没有创建远端仓库/推送
+- 本机 `git push` 被网络重置，本次通过 GitHub Git Data API 上传；仓库内容已完整
 
 ## 方式一：GitHub CLI（推荐）
 
