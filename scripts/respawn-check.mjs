@@ -1,0 +1,14 @@
+﻿import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/', {waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(500);
+await page.evaluate(()=>window.__fpMoba?.damageDummy(300)); await page.waitForTimeout(8000);
+const dummy=await page.evaluate(()=>window.__fpMoba?.state());
+await page.evaluate(()=>window.__fpMoba?.damagePlayer(100)); await page.waitForTimeout(800);
+const death=await page.locator('#death-screen').isVisible();
+await page.waitForTimeout(4500); const enabled=await page.locator('#respawn-button').isEnabled(); await page.locator('#respawn-button').click(); await page.waitForTimeout(1000);
+const respawn=await page.evaluate(()=>window.__fpMoba?.state()); const hp=await page.locator('#hp-text').textContent();
+console.log(JSON.stringify({dummy,death,enabled,respawn,hp,errors},null,2)); await browser.close();

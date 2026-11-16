@@ -1,0 +1,26 @@
+﻿import { chromium } from 'playwright-core';
+const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist'] });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/', {waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-settings-button').click();
+await page.waitForTimeout(300);
+const settingsVisible = await page.locator('#settings-screen').isVisible();
+await page.evaluate(()=>{
+  const fov=document.querySelector('#settings-fov'); fov.value='75'; fov.dispatchEvent(new Event('input',{bubbles:true}));
+  const cam=document.querySelector('#settings-camera-mode'); cam.value='first'; cam.dispatchEvent(new Event('change',{bubbles:true}));
+  const bob=document.querySelector('#settings-bob'); bob.value='45'; bob.dispatchEvent(new Event('input',{bubbles:true}));
+  const quality=document.querySelector('#settings-quality'); quality.value='low'; quality.dispatchEvent(new Event('change',{bubbles:true}));
+});
+await page.waitForTimeout(200);
+await page.locator('#settings-close').click();
+await page.waitForTimeout(250);
+const stored = await page.evaluate(()=>localStorage.getItem('fp-moba.comfort-settings.v1'));
+await page.locator('#start-button').click();
+await page.waitForTimeout(900);
+const state = await page.evaluate(()=>window.__fpMoba?.state());
+const fovText = await page.locator('#settings-fov-value').textContent().catch(()=>null);
+console.log(JSON.stringify({settingsVisible,stored,state,fovText,errors},null,2));
+await page.screenshot({path:'screenshots/settings-test.png'});
+await browser.close();

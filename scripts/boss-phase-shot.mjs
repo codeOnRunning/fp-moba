@@ -1,0 +1,10 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(700);
+await page.evaluate(()=>window.__fpMoba?.damageDummy(900)); await page.waitForTimeout(700);
+await page.screenshot({path:'screenshots/boss-phase2.png'});
+console.log(await page.locator('#target-hp-text').textContent(), await page.locator('#target-phase').textContent());
+await browser.close();

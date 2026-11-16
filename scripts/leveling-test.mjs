@@ -1,0 +1,17 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(600);
+const start=await page.evaluate(()=>window.__fpMoba?.state());
+await page.evaluate(()=>window.__fpMoba?.damageDummy(300));
+await page.waitForTimeout(900);
+const dead=await page.evaluate(()=>window.__fpMoba?.state());
+await page.waitForTimeout(6000);
+const respawned=await page.evaluate(()=>window.__fpMoba?.state());
+const xpText=await page.locator('#xp-text').textContent();
+const levelText=await page.locator('#level-text').textContent();
+await page.screenshot({path:'screenshots/leveling-test.png'});
+console.log(JSON.stringify({start,dead,respawned,xpText,levelText,errors},null,2)); await browser.close();

@@ -1,0 +1,16 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1280,height:800}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-settings-button').click(); await page.waitForTimeout(200);
+await page.evaluate(()=>{const f=document.querySelector('#settings-fov');f.value='76';f.dispatchEvent(new Event('input',{bubbles:true}));const c=document.querySelector('#settings-camera-mode');c.value='first';c.dispatchEvent(new Event('change',{bubbles:true}));});
+await page.locator('#settings-close').click(); await page.waitForTimeout(200);
+await page.reload({waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-settings-button').click(); await page.waitForTimeout(200);
+const fov=await page.locator('#settings-fov').inputValue(); const cam=await page.locator('#settings-camera-mode').inputValue();
+await page.locator('#settings-close').click(); await page.locator('#start-button').click(); await page.waitForTimeout(700);
+const state=await page.evaluate(()=>window.__fpMoba?.state());
+console.log(JSON.stringify({fov,cam,state,errors},null,2)); await browser.close();

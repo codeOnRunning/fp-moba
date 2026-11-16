@@ -1,0 +1,1640 @@
+import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { AudioSystem } from './AudioSystem';
+import type { DummyShot } from './Dummy';
+import { Effects } from './Effects';
+import { Boss, type BossAttackEvent } from './boss/Boss';
+import { BossTelegraph } from './boss/BossTelegraph';
+import { Hud } from './Hud';
+import { InputController } from './InputController';
+import { createArtMap } from './art/EnvironmentBuilder';
+import { loadArtAssets, type ArtAssets } from './art/AssetLibrary';
+import { CharacterView } from './art/CharacterView';
+import { PlayerController } from './PlayerController';
+import { ProjectileSystem, type ProjectileKind } from './ProjectileSystem';
+import { SettingsPanel } from './SettingsPanel';
+import {
+  loadSettings,
+  sanitize,
+  saveSettings,
+  type ComfortSettings,
+} from './SettingsStore';
+import { GravityZone } from './abilities/GravityZone';
+import { AimPreview } from './abilities/AimPreview';
+import { RiftBeam } from './abilities/RiftBeam';
+import {
+  pickUpgrades,
+  type UpgradeDefinition,
+  type UpgradeId,
+} from './UpgradeSystem';
+
+const FIXED_DT = 1 / 60;
+const MAX_STEPS = 5;
+const PLAYER_MAX_HEALTH = 100;
+const PLAYER_MAX_MANA = 160;
+const MAX_LEVEL = 20;
+const XP_BASE = 80;
+const XP_PER_LEVEL = 30;
+const Q_COOLDOWN = 2.4;
+const Q_MANA_COST = 25;
+const W_COOLDOWN = 7;
+const W_MANA_COST = 30;
+const E_COOLDOWN = 9;
+const E_MANA_COST = 20;
+const R_COOLDOWN = 45;
+const R_MANA_COST = 50;
+const BASIC_COOLDOWN = 0.32;
+const BOSS_ROUNDS = 3;
+const BOSS_BASE_HEALTH = 1800;
+const BOSS_HEALTH_GROWTH = 0.2;
+const BOSS_DAMAGE_GROWTH = 0.15;
+
+export class Game {
+  private readonly scene = new THREE.Scene();
+  private readonly camera: THREE.PerspectiveCamera;
+  private readonly renderer: THREE.WebGLRenderer;
+  private composer!: EffectComposer;
+  private bloomPass!: UnrealBloomPass;
+  private readonly hud = new Hud();
+  private readonly audio = new AudioSystem();
+
+  private world!: RAPIER.World;
+  private assets!: ArtAssets;
+  private player!: PlayerController;
+  private dummy!: Boss;
+  private readonly bossTelegraphs: BossTelegraph[] = [];
+  private bossDefeated = false;
+  private mageView!: CharacterView;
+  private enemyView!: CharacterView;
+  private projectiles!: ProjectileSystem;
+  private effects!: Effects;
+  private input!: InputController;
+  private mageActionLock = 0;
+  private enemyActionLock = 0;
+  private isMoving = false;
+
+  private viewmodel!: THREE.Group;
+  private staffTip!: THREE.Mesh;
+  private readonly viewmodelBase = new THREE.Vector3(0.42, -0.58, -1.08);
+
+  private readonly settings: ComfortSettings = loadSettings();
+  private settingsPanel!: SettingsPanel;
+  private cameraMode: 'first' | 'third' = this.settings.cameraMode;
+  private started = false;
+  private running = false;
+  private playerDead = false;
+  private deathRemaining = 0;
+
+  private playerHealth = PLAYER_MAX_HEALTH;
+  private playerMana = PLAYER_MAX_MANA;
+  private playerLevel = 1;
+  private playerXp = 0;
+  private bestTime: number | null = readBestTime();
+  private runRound = 1;
+  private readonly upgrades = new Map<UpgradeId, number>();
+  private runFinished = false;
+  private upgradePending = false;
+  private qCooldown = 0;
+  private wCooldown = 0;
+  private eCooldown = 0;
+  private rCooldown = 0;
+  private basicCooldown = 0;
+  private qCharge = 0;
+  private qHeld = false;
+  private markStacks = 0;
+  private markTimer = 0;
+  private debugGravity = '';
+  private debugBossAttack = '';
+  private invulnerableTime = 0;
+  private readonly gravityZones: GravityZone[] = [];
+  private wPreview!: AimPreview;
+  private wAiming = false;
+  private readonly wAimPoint = new THREE.Vector3();
+  private beam!: RiftBeam;
+  private beamActiveTime = 0;
+  private beamTickTimer = 0;
+  private kills = 0;
+  private gold = 0;
+  private elapsed = 0;
+
+  private lastTime = 0;
+  private accumulator = 0;
+  private smoothedEyeY = 1.7;
+  private cameraInitialized = false;
+  private snapCamera = true;
+  private fpsFrames = 0;
+  private fpsTime = 0;
+  private viewmodelKick = 0;
+  private bobTime = 0;
+  private shakeTime = 0;
+  private shakeStrength = 0;
+
+  private readonly respawnPosition = new THREE.Vector3(-20, 0.85, 0);
+
+  private get maxHealth(): number {
+    return (
+      PLAYER_MAX_HEALTH +
+      (this.playerLevel - 1) * 8 +
+      (this.upgrades.get('vitality') ?? 0) * 25
+    );
+  }
+
+  private get maxMana(): number {
+    return PLAYER_MAX_MANA + (this.playerLevel - 1) * 7;
+  }
+
+  private get xpToNext(): number {
+    return XP_BASE + (this.playerLevel - 1) * XP_PER_LEVEL;
+  }
+
+  private get damageMultiplier(): number {
+    return 1 + (this.playerLevel - 1) * 0.045;
+  }
+
+  private get cooldownMultiplier(): number {
+    return Math.max(
+      0.35,
+      (1 - (this.playerLevel - 1) * 0.02) *
+        (1 - (this.upgrades.get('cooldown') ?? 0) * 0.1),
+    );
+  }
+
+  private get attackSpeedMultiplier(): number {
+    return (
+      (1 + (this.playerLevel - 1) * 0.02) *
+      (1 + (this.upgrades.get('basicSpeed') ?? 0) * 0.15)
+    );
+  }
+
+  private get qChargeRate(): number {
+    return 1 + (this.upgrades.get('qCharge') ?? 0) * 0.3;
+  }
+
+  private get wRadius(): number {
+    return 5.2 * (1 + (this.upgrades.get('wRadius') ?? 0) * 0.25);
+  }
+
+  private get eCooldownMultiplier(): number {
+    return Math.max(0.4, 1 - (this.upgrades.get('eCooldown') ?? 0) * 0.2);
+  }
+
+  private get rDamageMultiplier(): number {
+    return 1 + (this.upgrades.get('rDamage') ?? 0) * 0.3;
+  }
+
+  private get markDamageMultiplier(): number {
+    return 1 + (this.upgrades.get('markDamage') ?? 0) * 0.5;
+  }
+
+  private get bossRoundHealth(): number {
+    return BOSS_BASE_HEALTH * (1 + (this.runRound - 1) * BOSS_HEALTH_GROWTH);
+  }
+
+  private get bossRoundDamage(): number {
+    return 1 + (this.runRound - 1) * BOSS_DAMAGE_GROWTH;
+  }
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    this.camera = new THREE.PerspectiveCamera(this.settings.fov, 1, 0.05, 180);
+    this.camera.rotation.order = 'YXZ';
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
+
+    this.setupRenderer();
+    this.scene.add(this.camera);
+  }
+
+  async init(): Promise<void> {
+    await RAPIER.init();
+    this.assets = await loadArtAssets();
+
+    this.world = new RAPIER.World({ x: 0, y: -26, z: 0 });
+    this.world.timestep = FIXED_DT;
+
+    const spawns = createArtMap(this.scene, this.world, this.assets);
+    this.respawnPosition.copy(spawns.playerSpawn);
+
+    this.player = new PlayerController(this.world, this.scene, spawns.playerSpawn);
+    this.player.setVisualVisible(false);
+
+    this.mageView = new CharacterView(
+      this.assets.mage,
+      0.5,
+      undefined,
+      0x142a66,
+      true,
+      1.2,
+      0.78,
+    );
+    this.mageView.setVisible(false);
+    this.scene.add(this.mageView.root);
+
+    this.dummy = new Boss(this.world, spawns.dummySpawn, {
+      onAttack: (attack) => this.onBossAttack(attack),
+      onBarrage: (origin, directions) => this.onBossBarrage(origin, directions),
+      onPhaseTwo: () => this.onBossPhaseTwo(),
+      onSummon: () => this.onBossSummon(),
+      onDeath: () => this.onDummyDeath(),
+    });
+    this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.dummy.setPrimitiveVisible(false);
+    this.enemyView = new CharacterView(
+      this.assets.skeleton,
+      1.15,
+      0x8a91a8,
+      0x4b0b1f,
+    );
+    this.enemyView.setPosition(
+      spawns.dummySpawn.x,
+      this.enemyView.groundOffset,
+      spawns.dummySpawn.z,
+    );
+    this.scene.add(this.enemyView.root);
+
+    this.projectiles = new ProjectileSystem(this.scene);
+    this.effects = new Effects(this.scene);
+    this.wPreview = new AimPreview(this.scene, 5.2);
+    this.beam = new RiftBeam(this.scene);
+    this.createViewmodel();
+
+    this.input = new InputController(
+      this.canvas,
+      (locked) => this.handleLockChange(locked),
+      (message) => this.handleLockError(message),
+    );
+
+    this.settingsPanel = new SettingsPanel(
+      this.settings,
+      (settings) => {
+        this.applySettings(settings);
+        saveSettings(this.settings);
+      },
+      () => this.closeSettings(),
+    );
+    this.applySettings(this.settings, false);
+
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setMana(this.playerMana, this.maxMana);
+    this.hud.setLevel(this.playerLevel);
+    this.hud.setExperience(this.playerXp, this.xpToNext, this.playerLevel);
+    this.hud.setKills(0);
+    this.hud.setGold(0);
+    this.hud.setAbilityCooldown('q', 0, Q_COOLDOWN);
+    this.hud.setAbilityCooldown('w', 0, W_COOLDOWN);
+    this.hud.setAbilityCooldown('e', 0, E_COOLDOWN);
+    this.hud.setAbilityCooldown('r', 0, R_COOLDOWN);
+    this.hud.setMode(this.cameraMode);
+    this.hud.setTimer(0);
+
+    this.bindUI();
+    this.hud.setStartReady();
+    this.updateCamera(0);
+    this.dummy.update(0, this.player.position);
+    this.renderer.info.reset();
+    this.composer.render();
+
+    this.lastTime = performance.now();
+    requestAnimationFrame(this.animate);
+    this.exposeDebugApi();
+  }
+
+  private exposeDebugApi(): void {
+    if (!import.meta.env.DEV) return;
+
+    (window as unknown as {
+      __fpMoba?: {
+        state: () => Record<string, unknown>;
+        faceDummy: () => void;
+        damageDummy: (amount: number) => void;
+        damagePlayer: (amount: number) => void;
+      };
+    }).__fpMoba = {
+      state: () => ({
+        running: this.running,
+        playerDead: this.playerDead,
+        yaw: this.input.yaw,
+        pitch: this.input.pitch,
+        player: this.player.position.toArray(),
+        dummyHealth: this.dummy.health,
+        dummyMaxHealth: this.dummy.maxHealth,
+        dummyAlive: this.dummy.alive,
+        dummyPhase: this.dummy.phase,
+        bossDefeated: this.bossDefeated,
+        bossTelegraphs: this.bossTelegraphs.length,
+        debugBossAttack: this.debugBossAttack,
+        dummyPosition: this.dummy.position.toArray(),
+        playerHealth: this.playerHealth,
+        runRound: this.runRound,
+        upgrades: Object.fromEntries(this.upgrades),
+        playerLevel: this.playerLevel,
+        playerXp: this.playerXp,
+        xpToNext: this.xpToNext,
+        maxHealth: this.maxHealth,
+        maxMana: this.maxMana,
+        dummyRespawnTimer: this.dummy.respawnTimerValue,
+        cameraMode: this.cameraMode,
+        projectiles: this.projectiles.count,
+        qCooldown: this.qCooldown,
+        wCooldown: this.wCooldown,
+        wAiming: this.wAiming,
+        wAimPoint: this.wAimPoint.toArray(),
+        wPreviewVisible: this.wPreview.visible,
+        eCooldown: this.eCooldown,
+        rCooldown: this.rCooldown,
+        markStacks: this.markStacks,
+        beamActive: this.beamActiveTime > 0,
+        debugGravity: this.debugGravity,
+        keys: [...this.input.keys],
+        pointerLocked: this.input.isLocked,
+      }),
+      faceDummy: () => {
+        const target = this.dummy.position.clone().add(new THREE.Vector3(0, 0.55, 0));
+        const eye = this.player.position.clone().add(new THREE.Vector3(0, 0.82, 0));
+        const dx = target.x - eye.x;
+        const dz = target.z - eye.z;
+        const horizontal = Math.hypot(dx, dz);
+        this.input.yaw = Math.atan2(-dx, -dz);
+        this.input.pitch = Math.atan2(target.y - eye.y, Math.max(0.001, horizontal));
+        this.updateCamera(0);
+      },
+      damageDummy: (amount: number) => {
+        this.onDummyHit(
+          amount,
+          this.dummy.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
+          'q',
+        );
+      },
+      damagePlayer: (amount: number) => {
+        this.onPlayerHit(
+          amount,
+          this.player.position.clone().add(new THREE.Vector3(0, 0.2, 0)),
+          'enemy',
+        );
+      },
+    };
+  }
+
+  private setupRenderer(): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.22;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.info.autoReset = false;
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.52,
+      0.55,
+      0.9,
+    );
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(new OutputPass());
+
+    window.addEventListener('resize', this.handleResize);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private bindUI(): void {
+    document.getElementById('start-button')?.addEventListener('click', () => {
+      void this.start();
+    });
+    document.getElementById('resume-button')?.addEventListener('click', () => {
+      void this.resume();
+    });
+    document.getElementById('start-settings-button')?.addEventListener('click', () => {
+      this.openSettings();
+    });
+    document.getElementById('pause-settings-button')?.addEventListener('click', () => {
+      this.openSettings();
+    });
+    this.hud.bindRespawn(() => this.respawn());
+    this.hud.bindVictoryRetry(() => this.restartBoss());
+  }
+
+  private async start(): Promise<void> {
+    if (this.playerDead) return;
+
+    this.started = true;
+    this.running = true;
+    this.settingsPanel?.hide();
+    this.hud.hideStart();
+    this.hud.hidePause();
+    this.audio.resume();
+    this.hud.showToast('舒适模式：第三人称 · FOV 70 · 无武器晃动 · V 切换第一人称', 3200);
+    this.lastTime = performance.now();
+    this.accumulator = 0;
+
+    const locked = await this.input.requestLock();
+    if (!locked) {
+      this.running = false;
+      this.hud.showPause();
+    }
+  }
+
+  private async resume(): Promise<void> {
+    if (this.playerDead) return;
+
+    this.settingsPanel?.hide();
+    this.hud.hidePause();
+    this.audio.resume();
+    this.running = true;
+    this.lastTime = performance.now();
+    this.accumulator = 0;
+
+    const locked = await this.input.requestLock();
+    if (!locked) {
+      this.running = false;
+      this.hud.showPause();
+    }
+  }
+
+  private cancelWAim(): void {
+    this.wAiming = false;
+    this.wPreview?.setVisible(false);
+  }
+
+  private pause(): void {
+    this.running = false;
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.input.exitLock();
+    this.hud.showPause();
+  }
+
+  private openSettings(): void {
+    this.running = false;
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.input.exitLock();
+    this.hud.hideStart();
+    this.hud.hidePause();
+    this.settingsPanel.show(this.settings);
+  }
+
+  private closeSettings(): void {
+    this.settingsPanel.hide();
+    if (!this.started) {
+      this.hud.showStart();
+    } else if (!this.playerDead) {
+      this.hud.showPause();
+    }
+  }
+
+  private applySettings(settings: ComfortSettings, persist = true): void {
+    const next = sanitize(settings);
+    Object.assign(this.settings, next);
+
+    this.camera.fov = next.fov;
+    this.camera.updateProjectionMatrix();
+    this.cameraMode = next.cameraMode;
+    this.snapCamera = true;
+
+    if (this.input) {
+      this.input.sensitivity = 0.002 * next.sensitivity;
+      this.input.invertY = next.invertY;
+    }
+
+    this.applyQuality(next.quality);
+    this.hud.setMode(this.cameraMode);
+    if (persist) {
+      saveSettings(this.settings);
+    }
+  }
+
+  private applyQuality(quality: ComfortSettings['quality']): void {
+    const pixelRatio =
+      quality === 'low' ? 1.0 : quality === 'medium' ? 1.5 : 2.0;
+
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatio));
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatio));
+    this.bloomPass.enabled = quality !== 'low';
+    this.bloomPass.strength = quality === 'high' ? 0.52 : 0.36;
+    this.renderer.shadowMap.enabled = quality !== 'low';
+  }
+
+  private handleLockChange(locked: boolean): void {
+    if (locked) {
+      this.hud.hideStart();
+      this.hud.hidePause();
+      if (!this.playerDead) {
+        this.running = true;
+        this.lastTime = performance.now();
+        this.accumulator = 0;
+      }
+      return;
+    }
+
+    if (this.started && !this.playerDead && !this.settingsPanel?.isOpen) {
+      this.running = false;
+      this.hud.showPause();
+    }
+  }
+
+  private handleLockError(message: string): void {
+    this.hud.showToast(message, 2600);
+    if (this.started && !this.playerDead) {
+      this.running = false;
+      this.hud.showPause();
+    }
+  }
+
+  private readonly handleResize = (): void => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.setSize(width, height, false);
+    this.composer.setSize(width, height);
+  };
+
+  private readonly handleVisibilityChange = (): void => {
+    if (document.hidden && this.running) {
+      this.pause();
+    }
+  };
+
+  private readonly animate = (now: number): void => {
+    requestAnimationFrame(this.animate);
+
+    const frameDelta = Math.min(0.1, Math.max(0, (now - this.lastTime) / 1000));
+    this.lastTime = now;
+
+    if (this.running && !this.playerDead) {
+      this.accumulator += frameDelta;
+      let steps = 0;
+      while (this.accumulator >= FIXED_DT && steps < MAX_STEPS) {
+        this.fixedUpdate(FIXED_DT);
+        this.accumulator -= FIXED_DT;
+        steps += 1;
+      }
+      if (steps === MAX_STEPS) {
+        this.accumulator = 0;
+      }
+
+      this.updateCamera(frameDelta);
+      this.updateViewmodel(frameDelta);
+      this.updateHud();
+    } else if (this.playerDead) {
+      this.deathRemaining = Math.max(0, this.deathRemaining - frameDelta);
+      this.hud.setDeathCountdown(this.deathRemaining);
+      this.updateCamera(frameDelta);
+    }
+
+    this.mageView.update(frameDelta);
+    this.effects.update(frameDelta);
+    this.renderer.info.reset();
+    this.composer.render();
+    this.updatePerf(frameDelta);
+    this.input.endFrame();
+  };
+
+  private fixedUpdate(dt: number): void {
+    this.elapsed += dt;
+    this.qCooldown = Math.max(0, this.qCooldown - dt);
+    this.wCooldown = Math.max(0, this.wCooldown - dt);
+    this.eCooldown = Math.max(0, this.eCooldown - dt);
+    this.rCooldown = Math.max(0, this.rCooldown - dt);
+    this.basicCooldown = Math.max(0, this.basicCooldown - dt);
+    this.invulnerableTime = Math.max(0, this.invulnerableTime - dt);
+    this.markTimer = Math.max(0, this.markTimer - dt);
+    if (this.markTimer <= 0) this.markStacks = 0;
+    this.playerMana = Math.min(this.maxMana, this.playerMana + 10 * dt);
+
+    if (this.input.consumePressed('KeyV')) {
+      this.toggleCamera();
+    }
+    if (this.input.consumePressed('Space') && this.player.jump()) {
+      this.effects.castPulse(
+        this.player.position.clone().add(new THREE.Vector3(0, 0.3, 0)),
+        0x9fe8ff,
+      );
+    }
+
+    // Q is charge-on-hold, cast-on-release. The pressed edge also catches a quick tap.
+    const qPressed = this.input.consumePressed('KeyQ');
+    const qDown = this.input.isDown('KeyQ');
+    if (
+      (qPressed || qDown) &&
+      !this.qHeld &&
+      this.qCooldown <= 0 &&
+      this.playerMana >= Q_MANA_COST
+    ) {
+      this.qHeld = true;
+      this.qCharge = qPressed ? 0.08 : 0;
+    }
+    if (qDown && this.qHeld) {
+      this.qCharge = Math.min(1, this.qCharge + (dt / 0.6) * this.qChargeRate);
+    } else if (!qDown && this.qHeld) {
+      const charge = Math.max(0.08, this.qCharge);
+      this.qHeld = false;
+      this.qCharge = 0;
+      this.castQ(charge);
+    }
+
+    // F is hold-to-aim, release-to-cast. W is movement, so the ability lives on F.
+    const fPressed = this.input.consumePressed('KeyF');
+    const fDown = this.input.isDown('KeyF');
+    if (fPressed && !this.wAiming) {
+      if (this.wCooldown > 0) {
+        this.hud.showToast(`引力法阵冷却中 ${this.wCooldown.toFixed(1)}s`, 650);
+      } else if (this.playerMana < W_MANA_COST) {
+        this.hud.showToast('法力不足', 750);
+      } else {
+        this.wAiming = true;
+        this.wAimPoint.copy(this.getGroundAimPoint(30));
+        this.wPreview.setPosition(this.wAimPoint);
+        this.wPreview.setVisible(true);
+        this.hud.showToast('按住 F 调整落点 · 松开释放', 900);
+      }
+    }
+    if (this.wAiming) {
+      if (!fDown) {
+        const target = this.wAimPoint.clone();
+        this.wAiming = false;
+        this.wPreview.setVisible(false);
+        this.castW(target);
+      } else {
+        this.wAimPoint.copy(this.getGroundAimPoint(30));
+        this.wPreview.setPosition(this.wAimPoint);
+        this.wPreview.update(dt);
+      }
+    }
+
+    if (this.input.consumePressed('KeyE')) this.castE();
+    if (this.input.consumePressed('KeyR')) this.castR();
+
+    if (this.input.isFireHeld) {
+      this.tryBasicAttack();
+    }
+
+    const move = this.input.getMoveVector();
+    this.isMoving = move.x !== 0 || move.z !== 0;
+    this.mageActionLock = Math.max(0, this.mageActionLock - dt);
+    this.enemyActionLock = Math.max(0, this.enemyActionLock - dt);
+
+    this.player.update(dt, move, this.input.yaw);
+    this.dummy.update(dt, this.player.position);
+    this.world.step();
+    this.player.sync();
+    this.updateGravityZones(dt);
+    this.updateBossTelegraphs(dt);
+    this.updateBeam(dt);
+
+    if (this.mageActionLock <= 0 && !this.playerDead) {
+      this.mageView.play(this.isMoving ? 'Walking_A' : 'Idle', 0.18);
+    }
+
+    this.enemyView.setPosition(
+      this.dummy.position.x,
+      this.enemyView.groundOffset,
+      this.dummy.position.z,
+    );
+    if (this.dummy.alive) {
+      this.enemyView.setRotation(
+        Math.atan2(
+          this.player.position.x - this.dummy.position.x,
+          this.player.position.z - this.dummy.position.z,
+        ),
+      );
+    }
+    if (this.enemyActionLock <= 0 && this.dummy.alive) {
+      this.enemyView.play('Idle', 0.18);
+    }
+    this.enemyView.update(dt);
+
+    this.projectiles.update(
+      dt,
+      this.world,
+      this.player.collider,
+      this.dummy.collider,
+      this.dummy.alive,
+      {
+        onDummyHit: (damage, point, kind) => this.onDummyHit(damage, point, kind),
+        onPlayerHit: (damage, point, kind) => this.onPlayerHit(damage, point, kind),
+        onWallHit: (point, kind) => this.onWallHit(point, kind),
+      },
+    );
+  }
+
+  private updateCamera(dt: number): void {
+    const position = this.player.position;
+    const yaw = this.input.yaw;
+    const pitch = this.input.pitch;
+    const smoothDt = Math.max(dt, 1 / 120);
+    const targetEyeY = position.y + 0.82;
+
+    if (!this.cameraInitialized || this.snapCamera) {
+      this.smoothedEyeY = targetEyeY;
+      this.cameraInitialized = true;
+    } else {
+      // Stabilize the eye height against small physics/step jitter.
+      this.smoothedEyeY = THREE.MathUtils.damp(
+        this.smoothedEyeY,
+        targetEyeY,
+        20,
+        smoothDt,
+      );
+    }
+
+    const eye = new THREE.Vector3(position.x, this.smoothedEyeY, position.z);
+    const forward = new THREE.Vector3(
+      -Math.sin(yaw) * Math.cos(pitch),
+      Math.sin(pitch),
+      -Math.cos(yaw) * Math.cos(pitch),
+    ).normalize();
+
+    if (this.cameraMode === 'first') {
+      this.camera.position.copy(eye);
+      this.camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    } else {
+      const desired = eye.clone().addScaledVector(forward, -4.2);
+      desired.y += 0.22;
+
+      const delta = desired.clone().sub(eye);
+      const distance = delta.length();
+      if (distance > 0.001) {
+        const direction = delta.clone().normalize();
+        const hit = this.world.castRay(
+          new RAPIER.Ray(eye, direction),
+          distance,
+          true,
+          undefined,
+          undefined,
+          this.player.collider,
+        );
+        if (hit) {
+          const safeDistance = Math.max(0.5, hit.timeOfImpact - 0.22);
+          desired.copy(eye).addScaledVector(direction, safeDistance);
+        }
+      }
+
+      if (this.snapCamera) {
+        this.camera.position.copy(desired);
+      } else {
+        // Comfort: smooth the spring arm instead of snapping into place.
+        this.camera.position.lerp(
+          desired,
+          1 - Math.exp(-12 * smoothDt),
+        );
+      }
+      this.camera.lookAt(eye.clone().addScaledVector(forward, 20));
+    }
+
+    if (this.shakeTime > 0) {
+      const progress = this.shakeTime / 0.14;
+      const amplitude = this.shakeStrength * progress;
+      const phase = performance.now() * 0.045;
+      this.camera.position.x += Math.sin(phase) * amplitude;
+      this.camera.position.y += Math.cos(phase * 1.7) * amplitude * 0.55;
+      this.shakeTime = Math.max(0, this.shakeTime - smoothDt);
+    }
+
+    this.snapCamera = false;
+    this.player.face(yaw);
+    this.player.setVisualVisible(false);
+    this.mageView.setPosition(position.x, this.mageView.groundOffset, position.z);
+    this.mageView.setRotation(yaw + Math.PI);
+    this.mageView.setVisible(this.cameraMode === 'third' && !this.playerDead);
+    this.viewmodel.visible =
+      this.cameraMode === 'first' && !this.settings.hideWeapon;
+    this.hud.setMode(this.cameraMode);
+  }
+
+  private updateViewmodel(dt: number): void {
+    if (this.cameraMode !== 'first') return;
+
+    const moving =
+      this.input.isDown('KeyW') ||
+      this.input.isDown('KeyA') ||
+      this.input.isDown('KeyS') ||
+      this.input.isDown('KeyD');
+    const bobAmount = this.settings.viewmodelBob / 100;
+    this.bobTime += dt * (moving ? 8.5 : 2.4);
+
+    // Comfort default is 0%; the slider can restore a subtle sway.
+    this.viewmodelKick = Math.max(0, this.viewmodelKick - dt * 6.5);
+    const bobX = Math.sin(this.bobTime) * 0.007 * bobAmount;
+    const bobY = Math.sin(this.bobTime * 2) * 0.005 * bobAmount;
+
+    this.viewmodel.position.set(
+      this.viewmodelBase.x + bobX,
+      this.viewmodelBase.y + bobY,
+      this.viewmodelBase.z + this.viewmodelKick * 0.12,
+    );
+    this.viewmodel.rotation.set(
+      -0.1 - this.viewmodelKick * 0.18,
+      -0.16,
+      -0.18 + Math.sin(this.bobTime) * 0.008 * bobAmount,
+    );
+  }
+
+  private updateHud(): void {
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setMana(this.playerMana, this.maxMana);
+    this.hud.setAbilityCooldown('q', this.qCooldown, Q_COOLDOWN * this.cooldownMultiplier);
+    this.hud.setAbilityCooldown('w', this.wCooldown, W_COOLDOWN * this.cooldownMultiplier);
+    this.hud.setAbilityCooldown(
+      'e',
+      this.eCooldown,
+      E_COOLDOWN * this.cooldownMultiplier * this.eCooldownMultiplier,
+    );
+    this.hud.setAbilityCooldown('r', this.rCooldown, R_COOLDOWN * this.cooldownMultiplier);
+    this.hud.setTimer(this.elapsed);
+    this.hud.setGold(this.gold);
+    this.hud.setKills(this.kills);
+    this.hud.setExperience(this.playerXp, this.xpToNext, this.playerLevel);
+    this.hud.setMarks(this.markStacks);
+
+    const dummyPosition = this.dummy.position;
+    const toDummy = dummyPosition
+      .clone()
+      .add(new THREE.Vector3(0, 0.8, 0))
+      .sub(this.camera.position);
+    const distance = toDummy.length();
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    const alignment = distance > 0.001 ? direction.dot(toDummy.normalize()) : 0;
+    const visible = this.dummy.alive && distance < 42 && alignment > 0.15;
+
+    this.hud.setTarget(
+      visible,
+      this.dummy.health,
+      this.dummy.maxHealth,
+      `轮回 ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+    );
+    this.hud.setCrosshairTargeting(
+      this.dummy.alive && distance < 36 && alignment > 0.94,
+    );
+  }
+
+  private castQ(charge = 0): void {
+    if (this.qCooldown > 0) {
+      this.hud.showToast(`星弧飞弹冷却中 ${this.qCooldown.toFixed(1)}s`, 650);
+      return;
+    }
+    if (this.playerMana < Q_MANA_COST) {
+      this.hud.showToast('法力不足', 750);
+      return;
+    }
+
+    const shot = this.getAimRay();
+    this.projectiles.spawn(shot.origin, shot.direction, 'q', 'player', {
+      speed: 36 + charge * 28,
+      damage: 55 + charge * 45,
+      life: 1.05 + charge * 0.25,
+      radius: 0.22 + charge * 0.08,
+      glowScale: 1.25 + charge * 0.55,
+    });
+    this.playerMana -= Q_MANA_COST;
+    this.qCooldown = Q_COOLDOWN * this.cooldownMultiplier;
+    this.viewmodelKick = 1 + charge * 0.4;
+    this.mageView.play('Spellcast_Shoot', 0.08, true);
+    this.mageActionLock = 0.44;
+    this.hud.pulseQ();
+    this.audio.qCast();
+    this.effects.castPulse(this.getStaffTipWorldPosition(), 0xc7a4ff);
+    if (charge > 0.8) {
+      this.hud.showToast('星弧飞弹 · 满蓄力', 550);
+    }
+  }
+
+  private castW(target: THREE.Vector3): void {
+    if (this.wCooldown > 0) {
+      this.hud.showToast(`引力法阵冷却中 ${this.wCooldown.toFixed(1)}s`, 650);
+      return;
+    }
+    if (this.playerMana < W_MANA_COST) {
+      this.hud.showToast('法力不足', 750);
+      return;
+    }
+
+    this.gravityZones.push(
+      new GravityZone(this.scene, {
+        position: target,
+        radius: this.wRadius,
+        delay: 0.55,
+        onExplode: (center, radius) => {
+          this.effects.impact(center.clone().add(new THREE.Vector3(0, 0.2, 0)), 0x57e0f0, 1.8);
+          this.audio.qCast();
+          this.debugGravity = `center ${center.x.toFixed(1)},${center.z.toFixed(1)} dummy ${this.dummy.position.x.toFixed(1)},${this.dummy.position.z.toFixed(1)} dist ${horizontalDistance(center, this.dummy.position).toFixed(1)}`;
+          if (
+            this.dummy.alive &&
+            horizontalDistance(center, this.dummy.position) <= radius
+          ) {
+            this.onDummyHit(
+              78,
+              this.dummy.position.clone().add(new THREE.Vector3(0, 0.5, 0)),
+              'q',
+            );
+          }
+        },
+      }),
+    );
+
+    this.playerMana -= W_MANA_COST;
+    this.wCooldown = W_COOLDOWN * this.cooldownMultiplier;
+    this.mageView.play('Spellcast_Shoot', 0.08, true);
+    this.mageActionLock = 0.35;
+    this.hud.pulseAbility('w');
+    this.audio.qCast();
+    this.effects.castPulse(target.clone().add(new THREE.Vector3(0, 0.2, 0)), 0x57e0f0);
+  }
+
+  private castE(): void {
+    if (this.eCooldown > 0) {
+      this.hud.showToast(`折跃冷却中 ${this.eCooldown.toFixed(1)}s`, 650);
+      return;
+    }
+    if (this.playerMana < E_MANA_COST) {
+      this.hud.showToast('法力不足', 750);
+      return;
+    }
+
+    const move = this.input.getMoveVector();
+    let direction = { x: move.x, z: move.z };
+    if (Math.hypot(direction.x, direction.z) < 0.01) {
+      const forward = new THREE.Vector3();
+      this.camera.getWorldDirection(forward);
+      direction = { x: forward.x, z: forward.z };
+    }
+    this.player.dash(direction, 8, 0.18);
+    this.invulnerableTime = 0.24;
+    this.playerMana -= E_MANA_COST;
+    this.eCooldown =
+      E_COOLDOWN * this.cooldownMultiplier * this.eCooldownMultiplier;
+    this.hud.pulseAbility('e');
+    this.audio.qCast();
+    this.effects.castPulse(this.player.position.clone().add(new THREE.Vector3(0, 0.55, 0)), 0x9fe8ff);
+    this.hud.showToast('折跃 · 0.24s 无敌帧', 650);
+  }
+
+  private castR(): void {
+    if (this.rCooldown > 0) {
+      this.hud.showToast(`天穹裂隙冷却中 ${this.rCooldown.toFixed(1)}s`, 700);
+      return;
+    }
+    if (this.playerMana < R_MANA_COST) {
+      this.hud.showToast('法力不足', 750);
+      return;
+    }
+
+    this.playerMana -= R_MANA_COST;
+    this.rCooldown = R_COOLDOWN * this.cooldownMultiplier;
+    this.beamActiveTime = 2.5;
+    this.beamTickTimer = 0;
+    this.hud.pulseAbility('r');
+    this.hud.showToast('天穹裂隙 · 引导中', 900);
+    this.audio.qCast();
+  }
+
+  private updateGravityZones(dt: number): void {
+    for (let i = this.gravityZones.length - 1; i >= 0; i -= 1) {
+      if (!this.gravityZones[i].update(dt)) {
+        this.gravityZones.splice(i, 1);
+      }
+    }
+  }
+
+  private updateBeam(dt: number): void {
+    if (this.beamActiveTime <= 0) {
+      this.beam.hide();
+      return;
+    }
+
+    this.beamActiveTime = Math.max(0, this.beamActiveTime - dt);
+    const origin = this.player.chestPosition;
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    const maxDistance = 32;
+    const hit = this.world.castRay(
+      new RAPIER.Ray(origin, direction),
+      maxDistance,
+      true,
+      undefined,
+      undefined,
+      this.player.collider,
+    );
+    const end = hit
+      ? origin.clone().addScaledVector(direction, hit.timeOfImpact)
+      : origin.clone().addScaledVector(direction, maxDistance);
+    this.beam.setSegment(origin, end, true);
+
+    this.beamTickTimer -= dt;
+    if (this.beamTickTimer <= 0) {
+      this.beamTickTimer = 0.18;
+      if (
+        hit &&
+        this.dummy.alive &&
+        hit.collider.handle === this.dummy.collider.handle
+      ) {
+        this.onDummyHit(
+          Math.round(28 * this.rDamageMultiplier),
+          end.clone(),
+          'q',
+        );
+        this.effects.impact(end, 0x57e0f0, 0.65);
+      }
+    }
+
+    if (this.beamActiveTime <= 0) {
+      this.beam.hide();
+    }
+  }
+
+  private getGroundAimPoint(maxDistance: number): THREE.Vector3 {
+    const cameraPosition = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPosition);
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+
+    // If the crosshair is on the boss, land the gravity well on its feet.
+    const bossPosition = this.dummy.position;
+    const toBoss = bossPosition.clone().sub(cameraPosition);
+    const bossDistance = Math.hypot(
+      bossPosition.x - this.player.position.x,
+      bossPosition.z - this.player.position.z,
+    );
+    const alignment = toBoss.normalize().dot(forward);
+    if (this.dummy.alive && bossDistance <= maxDistance && alignment > 0.86) {
+      return new THREE.Vector3(bossPosition.x, 0.06, bossPosition.z);
+    }
+
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const ray = new THREE.Ray(cameraPosition, forward);
+    const target = new THREE.Vector3();
+    if (ray.intersectPlane(groundPlane, target)) {
+      const distance = Math.hypot(
+        target.x - this.player.position.x,
+        target.z - this.player.position.z,
+      );
+      if (distance >= 2 && distance <= maxDistance) {
+        return new THREE.Vector3(target.x, 0.06, target.z);
+      }
+    }
+
+    const fallback = this.player.position.clone();
+    fallback.add(new THREE.Vector3(forward.x, 0, forward.z).normalize().multiplyScalar(14));
+    fallback.y = 0.06;
+    return fallback;
+  }
+
+  private tryBasicAttack(): void {
+    if (this.basicCooldown > 0) return;
+
+    const shot = this.getAimRay();
+    this.projectiles.spawn(shot.origin, shot.direction, 'basic', 'player');
+    this.basicCooldown = BASIC_COOLDOWN / this.attackSpeedMultiplier;
+    this.viewmodelKick = Math.max(this.viewmodelKick, 0.42);
+    this.mageView.play('1H_Ranged_Shoot', 0.06, true);
+    this.mageActionLock = 0.26;
+    this.hud.pulseBasic();
+    this.audio.shoot();
+    this.effects.muzzle(this.getStaffTipWorldPosition(), 0x9fe8ff);
+  }
+
+  private getAimRay(): { origin: THREE.Vector3; direction: THREE.Vector3 } {
+    const cameraDirection = new THREE.Vector3();
+    this.camera.getWorldDirection(cameraDirection);
+    const cameraPosition = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPosition);
+
+    const origin =
+      this.cameraMode === 'first'
+        ? cameraPosition.clone().addScaledVector(cameraDirection, 0.55)
+        : this.player.chestPosition;
+    const aimPoint = cameraPosition
+      .clone()
+      .addScaledVector(cameraDirection, 110);
+
+    return {
+      origin,
+      direction: aimPoint.sub(origin).normalize(),
+    };
+  }
+
+  private getStaffTipWorldPosition(): THREE.Vector3 {
+    return this.staffTip.getWorldPosition(new THREE.Vector3());
+  }
+
+  private onDummyHit(
+    damage: number,
+    point: THREE.Vector3,
+    kind: ProjectileKind,
+  ): void {
+    let finalDamage = Math.round(damage * this.damageMultiplier);
+
+    if (kind === 'basic' && this.markStacks >= 3) {
+      finalDamage += Math.round(
+        30 * this.damageMultiplier * this.markDamageMultiplier,
+      );
+      this.markStacks = 0;
+      this.markTimer = 0;
+      this.hud.showToast('星辉印记引爆', 650);
+      this.effects.impact(point, 0xe8c77a, 1.4);
+    } else if (kind === 'q') {
+      this.markStacks = Math.min(3, this.markStacks + 1);
+      this.markTimer = 6;
+    }
+
+    const died = this.dummy.takeDamage(finalDamage);
+    if (!died) {
+      this.enemyView.play('Hit_A', 0.06, true);
+      this.enemyActionLock = Math.max(this.enemyActionLock, 0.22);
+    }
+    this.hud.hitMarker();
+    this.hud.showDamage(point, this.camera, finalDamage, 'enemy');
+    this.audio.hit();
+    this.effects.impact(
+      point,
+      kind === 'q' ? 0xc7a4ff : 0x9fe8ff,
+      kind === 'q' ? 1.2 : 0.7,
+    );
+    this.gainExperience(finalDamage * 0.4);
+  }
+
+  private gainExperience(amount: number): void {
+    if (this.playerLevel >= MAX_LEVEL) {
+      this.playerXp = 0;
+      return;
+    }
+
+    this.playerXp += Math.max(0, amount);
+    let levelsGained = 0;
+    while (this.playerLevel < MAX_LEVEL && this.playerXp >= this.xpToNext) {
+      this.playerXp -= this.xpToNext;
+      this.playerLevel += 1;
+      levelsGained += 1;
+    }
+
+    if (this.playerLevel >= MAX_LEVEL) {
+      this.playerXp = 0;
+    }
+
+    if (levelsGained > 0) {
+      this.playerHealth = Math.min(
+        this.maxHealth,
+        this.playerHealth + levelsGained * 12,
+      );
+      this.playerMana = this.maxMana;
+      this.hud.setLevel(this.playerLevel);
+      this.hud.setHealth(this.playerHealth, this.maxHealth);
+      this.hud.setMana(this.playerMana, this.maxMana);
+      this.hud.showToast(
+        this.playerLevel >= MAX_LEVEL
+          ? `Lv.${this.playerLevel} 满级 · 星辉完全共鸣`
+          : `升级 Lv.${this.playerLevel} · 伤害/攻速/冷却提升`,
+        1200,
+      );
+      this.effects.castPulse(
+        this.player.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
+        0xe8c77a,
+      );
+      this.audio.qCast();
+    }
+
+    this.hud.setExperience(this.playerXp, this.xpToNext, this.playerLevel);
+  }
+
+  private onPlayerHit(
+    damage: number,
+    point: THREE.Vector3,
+    _kind: ProjectileKind,
+  ): void {
+    if (this.playerDead || this.invulnerableTime > 0) return;
+
+    this.playerHealth = Math.max(0, this.playerHealth - damage);
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.hitMarker();
+    this.hud.showDamage(point, this.camera, damage, 'player');
+    this.effects.impact(point, 0xff5c7a, 0.8);
+    this.mageView.play('Hit_A', 0.06, true);
+    this.mageActionLock = Math.max(this.mageActionLock, 0.24);
+    this.audio.hurt();
+
+    if (this.settings.screenShake > 0) {
+      this.shakeTime = 0.14;
+      this.shakeStrength = (this.settings.screenShake / 100) * 0.055;
+    }
+
+    if (this.playerHealth <= 0) {
+      this.die();
+    }
+  }
+
+  private onWallHit(point: THREE.Vector3, kind: ProjectileKind): void {
+    this.effects.impact(
+      point,
+      kind === 'q' ? 0xc7a4ff : kind === 'enemy' ? 0xff5c7a : 0x9fe8ff,
+      0.55,
+    );
+  }
+
+  private onBossAttack(attack: BossAttackEvent): void {
+    const color = attack.type === 'slam' ? 0xff5c7a : 0xffa45c;
+    this.bossTelegraphs.push(
+      new BossTelegraph(this.scene, {
+        position: attack.position,
+        radius: attack.radius,
+        delay: attack.delay,
+        color,
+        onComplete: (center, radius) => {
+          this.effects.impact(
+            center.clone().add(new THREE.Vector3(0, 0.25, 0)),
+            color,
+            2.2,
+          );
+          this.audio.enemyShoot();
+          const distance = horizontalDistance(center, this.player.position);
+          this.debugBossAttack = `center ${center.x.toFixed(1)},${center.z.toFixed(1)} player ${this.player.position.x.toFixed(1)},${this.player.position.z.toFixed(1)} dist ${distance.toFixed(1)} radius ${radius}`;
+          if (
+            !this.playerDead &&
+            !this.bossDefeated &&
+            !this.player.isAirborne &&
+            distance <= radius
+          ) {
+            this.onPlayerHit(
+              Math.round(attack.damage * this.bossRoundDamage),
+              this.player.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
+              'enemy',
+            );
+          }
+        },
+      }),
+    );
+    this.enemyView.play('Spellcast_Shoot', 0.08, true);
+    this.enemyActionLock = 0.5;
+    this.audio.enemyShoot();
+  }
+
+  private onBossBarrage(origin: THREE.Vector3, directions: THREE.Vector3[]): void {
+    for (const direction of directions) {
+      this.projectiles.spawn(origin, direction, 'enemy', 'dummy', {
+        damage: Math.round(9 * this.bossRoundDamage),
+      });
+    }
+    this.effects.muzzle(origin, 0xff5c7a);
+    this.enemyView.play('Spellcast_Shoot', 0.06, true);
+    this.enemyActionLock = 0.6;
+    this.audio.enemyShoot();
+  }
+
+  private onBossPhaseTwo(): void {
+    this.hud.showToast('星蚀守卫 · 第二阶段：星环解放', 1600);
+    this.effects.castPulse(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
+      0xff5c7a,
+    );
+    this.audio.qCast();
+  }
+
+  private onBossSummon(): void {
+    this.hud.showToast('星蚀碎片被召唤', 1100);
+    const origin = this.dummy.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+    const base = this.player.position
+      .clone()
+      .add(new THREE.Vector3(0, 0.25, 0))
+      .sub(origin)
+      .normalize();
+    const directions = [-0.2, 0, 0.2].map((spread) =>
+      base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spread),
+    );
+    this.onBossBarrage(origin, directions);
+  }
+
+  private updateBossTelegraphs(dt: number): void {
+    for (let i = this.bossTelegraphs.length - 1; i >= 0; i -= 1) {
+      if (!this.bossTelegraphs[i].update(dt)) {
+        this.bossTelegraphs.splice(i, 1);
+      }
+    }
+  }
+
+  private onDummyShoot(shot: DummyShot): void {
+    this.projectiles.spawn(shot.origin, shot.direction, 'enemy', 'dummy');
+    this.effects.muzzle(shot.origin, 0xff5c7a);
+    this.enemyView.play('Spellcast_Shoot', 0.08, true);
+    this.enemyActionLock = 0.55;
+    this.audio.enemyShoot();
+  }
+
+  private onDummyDeath(): void {
+    if (this.bossDefeated || this.upgradePending || this.runFinished) return;
+    this.bossDefeated = true;
+    this.running = false;
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.beamActiveTime = 0;
+    this.beam.hide();
+    this.projectiles.clear();
+    for (const zone of this.gravityZones.splice(0)) zone.dispose();
+    for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
+
+    this.kills = 1;
+    this.gold += 100;
+    this.gainExperience(120);
+    this.hud.setKills(this.kills);
+    this.hud.setGold(this.gold);
+    this.hud.setTarget(false);
+    this.hud.showToast('星蚀守卫已击败 · BOSS CLEARED', 2200);
+    this.audio.kill();
+    this.effects.impact(this.dummy.position, 0xff5c7a, 2.2);
+    this.enemyView.play('Death_A', 0.1, true);
+    this.enemyActionLock = 3.0;
+    this.input.exitLock();
+
+    if (this.runRound < BOSS_ROUNDS) {
+      this.upgradePending = true;
+      this.hud.showToast(
+        `星蚀守卫已击败 · 准备进入轮回 ${this.runRound + 1}`,
+        1400,
+      );
+      this.hud.showUpgrades(
+        this.runRound + 1,
+        pickUpgrades(),
+        (id) => this.chooseUpgrade(id),
+      );
+      return;
+    }
+
+    this.runFinished = true;
+    const previousBest = this.bestTime;
+    const isNewBest = previousBest === null || this.elapsed < previousBest;
+    if (isNewBest) {
+      this.bestTime = this.elapsed;
+      saveBestTime(this.elapsed);
+    }
+    this.hud.showVictory(
+      this.elapsed,
+      this.playerHealth,
+      this.playerLevel,
+      this.bestTime,
+      isNewBest,
+    );
+  }
+
+  private chooseUpgrade(id: UpgradeId): void {
+    this.upgrades.set(id, (this.upgrades.get(id) ?? 0) + 1);
+    this.upgradePending = false;
+    this.bossDefeated = false;
+    this.runRound += 1;
+    this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.dummy.respawn();
+    this.player.teleport(this.respawnPosition);
+    this.playerHealth = this.maxHealth;
+    this.playerMana = this.maxMana;
+    this.qCooldown = 0;
+    this.wCooldown = 0;
+    this.eCooldown = 0;
+    this.rCooldown = 0;
+    this.basicCooldown = 0;
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.beamActiveTime = 0;
+    this.beam.hide();
+    this.projectiles.clear();
+    for (const zone of this.gravityZones.splice(0)) zone.dispose();
+    for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
+    this.wPreview.setRadiusScale(this.wRadius / 5.2);
+
+    this.mageView.play('Idle', 0.1);
+    this.mageActionLock = 0;
+    this.enemyView.setVisible(true);
+    this.enemyView.play('Idle', 0.1);
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setMana(this.playerMana, this.maxMana);
+    this.hud.setLevel(this.playerLevel);
+    this.hud.hideUpgrades();
+    this.hud.setTarget(false);
+    this.hud.showToast(
+      `轮回 ${this.runRound} · 星蚀守卫 ${this.dummy.maxHealth} HP`,
+      1800,
+    );
+    this.running = true;
+    this.lastTime = performance.now();
+    this.accumulator = 0;
+    this.cameraInitialized = false;
+    this.snapCamera = true;
+    this.updateCamera(0);
+    void this.input.requestLock();
+  }
+
+  private die(): void {
+    this.playerDead = true;
+    this.running = false;
+    this.deathRemaining = 3;
+    this.projectiles.clear();
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.beamActiveTime = 0;
+    this.beam.hide();
+    for (const zone of this.gravityZones.splice(0)) zone.dispose();
+    this.hud.setLowHealth(false);
+    this.hud.showDeath(this.deathRemaining);
+    this.mageView.play('Death_A', 0.1, true);
+    this.input.exitLock();
+    this.audio.hurt();
+  }
+
+  private respawn(): void {
+    if (!this.playerDead) return;
+    this.resetEncounter();
+  }
+
+  private restartBoss(): void {
+    this.playerDead = false;
+    this.bossDefeated = false;
+    this.runRound = 1;
+    this.runFinished = false;
+    this.upgradePending = false;
+    this.upgrades.clear();
+    this.playerLevel = 1;
+    this.playerXp = 0;
+    this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.wPreview.setRadiusScale(1);
+    this.hud.hideVictory();
+    this.hud.hideUpgrades();
+    this.resetEncounter();
+    this.hud.setLevel(1);
+  }
+
+  private resetEncounter(): void {
+    this.playerDead = false;
+    this.bossDefeated = false;
+    this.playerHealth = this.maxHealth;
+    this.playerMana = this.maxMana;
+    this.qCooldown = 0;
+    this.wCooldown = 0;
+    this.eCooldown = 0;
+    this.rCooldown = 0;
+    this.basicCooldown = 0;
+    this.qCharge = 0;
+    this.qHeld = false;
+    this.cancelWAim();
+    this.markStacks = 0;
+    this.markTimer = 0;
+    this.invulnerableTime = 0;
+    this.beamActiveTime = 0;
+    this.beam.hide();
+    for (const zone of this.gravityZones.splice(0)) zone.dispose();
+    for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
+    this.deathRemaining = 0;
+    this.elapsed = 0;
+    this.player.teleport(this.respawnPosition);
+    this.dummy.respawn();
+    this.mageView.play('Idle', 0.1);
+    this.mageActionLock = 0;
+    this.enemyView.play('Idle', 0.1);
+    this.enemyActionLock = 0;
+    this.enemyView.setVisible(true);
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setMana(this.playerMana, this.maxMana);
+    this.hud.setAbilityCooldown('q', 0, Q_COOLDOWN);
+    this.hud.setAbilityCooldown('w', 0, W_COOLDOWN);
+    this.hud.setAbilityCooldown('e', 0, E_COOLDOWN);
+    this.hud.setAbilityCooldown('r', 0, R_COOLDOWN);
+    this.hud.setTarget(false);
+    this.hud.hideDeath();
+    this.hud.hideVictory();
+    this.running = true;
+    this.lastTime = performance.now();
+    this.accumulator = 0;
+    this.cameraInitialized = false;
+    this.snapCamera = true;
+    this.updateCamera(0);
+    void this.input.requestLock();
+  }
+
+  private toggleCamera(): void {
+    this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first';
+    this.settings.cameraMode = this.cameraMode;
+    saveSettings(this.settings);
+    this.snapCamera = true;
+    this.hud.setMode(this.cameraMode);
+    this.hud.showToast(
+      this.cameraMode === 'first' ? '第一人称视角' : '第三人称观察视角',
+      900,
+    );
+    this.updateCamera(0);
+  }
+
+  private updatePerf(frameDelta: number): void {
+    this.fpsFrames += 1;
+    this.fpsTime += frameDelta;
+    if (this.fpsTime < 0.35) return;
+
+    const fps = this.fpsFrames / this.fpsTime;
+    this.hud.setPerf(
+      fps,
+      this.renderer.info.render.calls,
+      this.renderer.info.render.triangles,
+    );
+    this.fpsFrames = 0;
+    this.fpsTime = 0;
+  }
+
+  private createViewmodel(): void {
+    this.viewmodel = new THREE.Group();
+    this.viewmodel.position.copy(this.viewmodelBase);
+    this.viewmodel.rotation.set(-0.1, -0.16, -0.18);
+    this.viewmodel.scale.setScalar(0.46);
+    this.camera.add(this.viewmodel);
+
+    const staffMaterial = new THREE.MeshStandardMaterial({
+      color: 0x5e4d35,
+      roughness: 0.48,
+      metalness: 0.42,
+    });
+    const metalMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb69256,
+      roughness: 0.28,
+      metalness: 0.78,
+    });
+
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.043, 1.0, 8),
+      staffMaterial,
+    );
+    shaft.rotation.z = -0.12;
+    shaft.position.set(0, 0, 0);
+    this.viewmodel.add(shaft);
+
+    const collar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.075, 0.018, 6, 16),
+      metalMaterial,
+    );
+    collar.position.set(-0.055, 0.46, 0);
+    collar.rotation.x = Math.PI * 0.5;
+    this.viewmodel.add(collar);
+
+    const tipMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd9c2ff,
+      emissive: 0x7245ff,
+      emissiveIntensity: 2.3,
+      roughness: 0.08,
+      metalness: 0.05,
+    });
+    this.staffTip = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.095, 0),
+      tipMaterial,
+    );
+    this.staffTip.position.set(-0.07, 0.55, 0);
+    this.staffTip.rotation.z = 0.18;
+    this.viewmodel.add(this.staffTip);
+
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(0.14, 0.012, 6, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x9f7bff,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    halo.position.copy(this.staffTip.position);
+    halo.rotation.x = Math.PI * 0.5;
+    this.viewmodel.add(halo);
+  }
+}
+
+function horizontalDistance(a: THREE.Vector3, b: THREE.Vector3): number {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function readBestTime(): number | null {
+  try {
+    const raw = window.localStorage.getItem('fp-moba.boss-best-time');
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBestTime(seconds: number): void {
+  try {
+    window.localStorage.setItem('fp-moba.boss-best-time', String(seconds));
+  } catch {
+    // Private mode/storage-disabled is non-fatal.
+  }
+}
+

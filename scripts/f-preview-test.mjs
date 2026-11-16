@@ -1,0 +1,13 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(700); await page.evaluate(()=>window.__fpMoba?.faceDummy());
+await page.keyboard.down('f'); await page.waitForTimeout(600);
+const aiming=await page.evaluate(()=>window.__fpMoba?.state());
+await page.screenshot({path:'screenshots/f-aim-preview.png'});
+await page.keyboard.up('f'); await page.waitForTimeout(2200);
+const released=await page.evaluate(()=>window.__fpMoba?.state());
+console.log(JSON.stringify({aiming,released,errors},null,2)); await browser.close();

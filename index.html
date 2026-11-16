@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070a12" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="description"
+      content="星辉试炼：第一人称单机 MOBA 灰盒战斗切片"
+    />
+    <title>星辉试炼 · Art Pass 1.0</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+      <div id="vignette"></div>
+
+      <header id="top-hud">
+        <div class="brand">
+          <div class="brand-mark">✦</div>
+          <div class="brand-copy">
+            <strong>星辉试炼</strong>
+            <span>ART PASS 1.0 · 星辉峡谷</span>
+          </div>
+        </div>
+        <div id="match-timer" class="timer">00:00</div>
+        <div id="perf" class="perf">FPS -- · DRAW --</div>
+      </header>
+
+      <div id="target-panel" class="target-panel hidden">
+        <div class="target-head">
+          <span class="target-name">星蚀守卫</span>
+          <span id="target-hp-text">300 / 300</span>
+        </div>
+        <div class="bar target-bar">
+          <div id="target-hp-fill" class="bar-fill enemy"></div>
+        </div>
+        <div id="target-phase" class="target-phase">第一阶段</div>
+      </div>
+
+      <div id="crosshair" aria-hidden="true">
+        <span class="crosshair-dot"></span>
+        <span class="crosshair-ring"></span>
+      </div>
+      <div id="hitmarker" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <div id="mark-stacks" class="mark-stacks hidden" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div id="damage-layer" aria-hidden="true"></div>
+
+      <div id="bottom-hud">
+        <section id="vitals" class="panel vitals">
+          <div class="vitals-top">
+            <div class="portrait">✦</div>
+            <div class="vitals-copy">
+              <div class="vitals-line">
+                <span>星辉法师</span>
+                <span id="level-text">Lv.1</span>
+              </div>
+              <div class="bar hp-bar">
+                <div id="hp-fill" class="bar-fill hp"></div>
+                <span id="hp-text">100 / 100</span>
+              </div>
+              <div class="bar mana-bar">
+                <div id="mana-fill" class="bar-fill mana"></div>
+                <span id="mana-text">160 / 160</span>
+              </div>
+              <div class="bar xp-bar">
+                <div id="xp-fill" class="bar-fill xp"></div>
+                <span id="xp-text">0 / 80 XP</span>
+              </div>
+            </div>
+          </div>
+          <div class="vitals-meta">
+            <span>击杀 <b id="kills-text">0</b></span>
+            <span>金币 <b id="gold-text">0</b></span>
+            <span id="camera-mode">第一人称</span>
+          </div>
+        </section>
+
+        <section id="abilities" class="panel abilities">
+          <div class="ability basic" id="ability-basic">
+            <span class="key">LMB</span>
+            <div class="ability-glyph">✧</div>
+            <span class="ability-name">奥术弹</span>
+          </div>
+          <div class="ability" id="ability-q">
+            <span class="key">Q</span>
+            <div class="ability-glyph">➤</div>
+            <div id="q-cooldown-mask" class="cooldown-mask"></div>
+            <span id="q-cooldown-text" class="cooldown-text"></span>
+            <span class="ability-name">秘法飞弹</span>
+          </div>
+          <div class="ability" id="ability-w">
+            <span class="key">F</span>
+            <div class="ability-glyph">◎</div>
+            <div id="w-cooldown-mask" class="cooldown-mask"></div>
+            <span id="w-cooldown-text" class="cooldown-text"></span>
+            <span class="ability-name">引力法阵</span>
+          </div>
+          <div class="ability" id="ability-e">
+            <span class="key">E</span>
+            <div class="ability-glyph">⇢</div>
+            <div id="e-cooldown-mask" class="cooldown-mask"></div>
+            <span id="e-cooldown-text" class="cooldown-text"></span>
+            <span class="ability-name">折跃</span>
+          </div>
+          <div class="ability" id="ability-r">
+            <span class="key">R</span>
+            <div class="ability-glyph">☄</div>
+            <div id="r-cooldown-mask" class="cooldown-mask"></div>
+            <span id="r-cooldown-text" class="cooldown-text"></span>
+            <span class="ability-name">天穹裂隙</span>
+          </div>
+        </section>
+
+        <section id="tips" class="panel tips">
+          <div><kbd>WASD</kbd> 移动</div>
+          <div><kbd>Space</kbd> 跳跃</div>
+          <div><kbd>鼠标</kbd> 视角</div>
+          <div><kbd>左键</kbd> 普攻</div>
+          <div><kbd>Q</kbd> 蓄力飞弹</div>
+          <div><kbd>F</kbd> 按住选落点</div>
+          <div><kbd>E</kbd> 折跃</div>
+          <div><kbd>R</kbd> 天穹裂隙</div>
+          <div><kbd>V</kbd> 视角</div>
+          <div><kbd>Esc</kbd> 暂停</div>
+        </section>
+      </div>
+
+      <div id="toast" class="toast"></div>
+
+      <div id="start-screen" class="screen">
+        <div class="screen-card start-card">
+          <div class="eyebrow">FIRST-PERSON · SINGLE-PLAYER · ART PASS 1.0</div>
+          <div class="title-row">
+            <div class="sigil">✦</div>
+            <div>
+              <h1>星辉试炼</h1>
+              <p class="subtitle">第一人称单机 MOBA · 星辉峡谷</p>
+            </div>
+          </div>
+          <p class="lead">
+            走进星辉峡谷，用奥术飞弹击碎星蚀守卫。先验证第一人称下的移动、瞄准与施法手感。
+          </p>
+          <div class="control-grid">
+            <div><kbd>WASD</kbd><span>移动</span></div>
+            <div><kbd>鼠标</kbd><span>视角</span></div>
+            <div><kbd>左键</kbd><span>普攻</span></div>
+            <div><kbd>Q</kbd><span>秘法飞弹</span></div>
+            <div><kbd>V</kbd><span>切换视角</span></div>
+            <div><kbd>Esc</kbd><span>暂停</span></div>
+          </div>
+          <button id="start-button" class="primary-button" type="button" disabled>
+            正在载入星辉峡谷…
+          </button>
+          <button id="start-settings-button" class="ghost-button" type="button">
+            舒适设置
+          </button>
+          <p class="fine-print">舒适优先：默认第三人称 · FOV 70 · 无武器晃动 · V 切第一人称</p>
+        </div>
+      </div>
+
+      <div id="pause-screen" class="screen hidden">
+        <div class="screen-card compact">
+          <div class="eyebrow">SIMULATION PAUSED</div>
+          <h2>已暂停</h2>
+          <p class="lead">鼠标已释放。点击继续，重新锁定视角。</p>
+          <button id="resume-button" class="primary-button" type="button">
+            点击继续
+          </button>
+          <button id="pause-settings-button" class="ghost-button" type="button">
+            舒适设置
+          </button>
+          <p class="fine-print">Esc 可再次暂停 · V 切换第一 / 第三人称</p>
+        </div>
+      </div>
+
+      <div id="death-screen" class="screen hidden">
+        <div class="screen-card compact danger">
+          <div class="eyebrow">DEFEATED</div>
+          <h2>你被星蚀守卫击倒了</h2>
+          <p id="death-countdown" class="lead">正在重构星辉之躯… 3</p>
+          <button id="respawn-button" class="primary-button" type="button" disabled>
+            等待复活
+          </button>
+        </div>
+      </div>
+
+      <div id="upgrade-screen" class="screen hidden">
+        <div class="screen-card upgrade-card">
+          <div class="eyebrow">STARBOUND BOON</div>
+          <h2>选择星辉强化</h2>
+          <p id="upgrade-subtitle" class="lead">下一轮回即将开始</p>
+          <div id="upgrade-options" class="upgrade-options"></div>
+          <p class="fine-print">击败星蚀守卫后获得 · 强化持续到本轮结束</p>
+        </div>
+      </div>
+
+      <div id="victory-screen" class="screen hidden">
+        <div class="screen-card compact victory-card">
+          <div class="eyebrow">BOSS CLEARED</div>
+          <h2>星蚀守卫已倒下</h2>
+          <p id="victory-summary" class="lead">用时 00:00 · 剩余生命 100</p>
+          <p id="victory-best" class="fine-print">本地最快 00:00</p>
+          <button id="victory-retry-button" class="primary-button" type="button">
+            再战一次
+          </button>
+        </div>
+      </div>
+
+      <div id="settings-screen" class="screen settings-screen hidden">
+        <div class="screen-card settings-card">
+          <div class="eyebrow">COMFORT &amp; VIDEO</div>
+          <div class="settings-heading">
+            <h2>舒适设置</h2>
+            <span class="settings-badge">自动保存</span>
+          </div>
+          <p class="lead settings-lead">
+            如果你容易晕 3D，优先保持第三人称、较低 FOV、无武器晃动，并关闭高成本后处理。
+          </p>
+
+          <div class="settings-grid">
+            <label class="setting-row">
+              <span>视野 FOV <b id="settings-fov-value">70°</b></span>
+              <input id="settings-fov" type="range" min="60" max="90" step="1" />
+              <small>更低更稳，更高更广；建议 68-72</small>
+            </label>
+
+            <label class="setting-row">
+              <span>默认视角</span>
+              <select id="settings-camera-mode">
+                <option value="third">第三人称 · 舒适推荐</option>
+                <option value="first">第一人称 · 沉浸</option>
+              </select>
+              <small>V 键可随时临时切换</small>
+            </label>
+
+            <label class="setting-row">
+              <span>鼠标灵敏度 <b id="settings-sensitivity-value">0.95×</b></span>
+              <input id="settings-sensitivity" type="range" min="50" max="200" step="5" />
+              <small>建议 0.8-1.1</small>
+            </label>
+
+            <label class="setting-row">
+              <span>武器晃动 <b id="settings-bob-value">0%</b></span>
+              <input id="settings-bob" type="range" min="0" max="100" step="5" />
+              <small>舒适模式建议 0%</small>
+            </label>
+
+            <label class="setting-row">
+              <span>屏幕震动 <b id="settings-shake-value">0%</b></span>
+              <input id="settings-shake" type="range" min="0" max="100" step="5" />
+              <small>受击时的镜头抖动</small>
+            </label>
+
+            <label class="setting-row">
+              <span>画质</span>
+              <select id="settings-quality">
+                <option value="low">低 · 最稳</option>
+                <option value="medium">中 · 推荐</option>
+                <option value="high">高 · 最佳画面</option>
+              </select>
+              <small>低画质会关闭 Bloom 并降低像素比</small>
+            </label>
+
+            <label class="setting-toggle">
+              <input id="settings-hide-weapon" type="checkbox" />
+              <span>隐藏第一人称武器</span>
+            </label>
+
+            <label class="setting-toggle">
+              <input id="settings-invert-y" type="checkbox" />
+              <span>反转 Y 轴</span>
+            </label>
+          </div>
+
+          <div class="settings-actions">
+            <button id="settings-reset" class="ghost-button" type="button">恢复默认</button>
+            <button id="settings-close" class="primary-button" type="button">完成</button>
+          </div>
+          <p class="fine-print">设置只保存在本机浏览器 · 不影响伤害/技能数值</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
