@@ -141,6 +141,7 @@ export class Game {
   private shopHealthBonus = 0;
   private shopCooldownBonus = 0;
   private shopItemsBought = 0;
+  private readonly equipment: string[] = [];
   private readonly laneMinions: LaneMinion[] = [];
   private readonly laneStructures: LaneStructure[] = [];
   private laneWaveTimer = 0;
@@ -1122,9 +1123,13 @@ export class Game {
     } else if (item === 'boots') {
       this.shopCooldownBonus = Math.min(0.24, this.shopCooldownBonus + 0.08);
     }
-    if (equipment) this.shopItemsBought += 1;
+    if (equipment) {
+      this.shopItemsBought += 1;
+      this.equipment.push(item);
+    }
     this.hud.setGold(this.gold);
     this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setEquipment(this.gameMode === 'lane', this.equipment);
     this.updateShopGold();
     this.hud.showToast(equipment ? '装备已装备' : '购买成功', 700);
   }
@@ -1685,6 +1690,7 @@ export class Game {
       laneNexus?.health ?? 0,
       1000,
     );
+    this.hud.setEquipment(this.gameMode === 'lane', this.equipment);
     this.hud.updateMinimap(
       this.player.position,
       this.dummy.position,
@@ -2636,6 +2642,7 @@ export class Game {
     this.shopHealthBonus = 0;
     this.shopCooldownBonus = 0;
     this.shopItemsBought = 0;
+    this.equipment.length = 0;
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
     this.applyBossModifiers();

@@ -89,6 +89,8 @@ export class Hud {
   private readonly laneTowerFill = element<HTMLDivElement>('lane-tower-fill');
   private readonly laneNexusText = element<HTMLElement>('lane-nexus-text');
   private readonly laneNexusFill = element<HTMLDivElement>('lane-nexus-fill');
+  private readonly equipmentStrip = element<HTMLDivElement>('equipment-strip');
+  private readonly equipmentSlots = element<HTMLDivElement>('equipment-slots');
   private readonly deathScreen = element<HTMLDivElement>('death-screen');
   private readonly deathCountdown = element<HTMLParagraphElement>('death-countdown');
   private readonly respawnButton = element<HTMLButtonElement>('respawn-button');
@@ -96,6 +98,7 @@ export class Hud {
   private toastTimer = 0;
   private hitmarkerTimer = 0;
   private hitDirectionTimer = 0;
+  private equipmentSignature = 'init';
 
   constructor() {
     this.setHealth(100, 100);
@@ -373,6 +376,32 @@ export class Hud {
       `造成伤害 ${Math.round(dealt)} · 承受伤害 ${Math.round(taken)} · 命中 ${hits}`;
     this.pauseStats.textContent = text;
     this.victoryStats.textContent = text;
+  }
+
+  setEquipment(visible: boolean, items: string[]): void {
+    const signature = `${visible}:${items.join(',')}`;
+    if (signature === this.equipmentSignature) return;
+    this.equipmentSignature = signature;
+    this.equipmentStrip.classList.toggle('hidden', !visible);
+    const glyphs: Record<string, string> = {
+      damage: '✦',
+      health: '♥',
+      staff: '✧',
+      armor: '◈',
+      boots: '➤',
+    };
+    this.equipmentSlots.replaceChildren();
+    for (let index = 0; index < 6; index += 1) {
+      const slot = document.createElement('span');
+      slot.className = 'equipment-slot';
+      const item = items[index];
+      if (item && glyphs[item]) {
+        slot.textContent = glyphs[item];
+        slot.classList.add('filled');
+        slot.title = item;
+      }
+      this.equipmentSlots.appendChild(slot);
+    }
   }
 
   setLaneObjectives(
