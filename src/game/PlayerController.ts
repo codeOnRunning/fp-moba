@@ -15,6 +15,7 @@ export class PlayerController {
   private verticalVelocity = 0;
   private grounded = false;
   private readonly horizontalVelocity = new THREE.Vector2();
+  private readonly externalVelocity = new THREE.Vector2();
   private readonly dashDirection = new THREE.Vector2();
   private dashTime = 0;
   private dashSpeed = 0;
@@ -76,6 +77,10 @@ export class PlayerController {
     return true;
   }
 
+  applyExternalForce(x: number, z: number): void {
+    this.externalVelocity.set(x, z);
+  }
+
   setVisualVisible(visible: boolean): void {
     this.visual.visible = visible;
   }
@@ -128,8 +133,11 @@ export class PlayerController {
       );
     }
 
-    const desiredX = this.horizontalVelocity.x * dt;
-    const desiredZ = this.horizontalVelocity.y * dt;
+    const desiredX =
+      (this.horizontalVelocity.x + this.externalVelocity.x) * dt;
+    const desiredZ =
+      (this.horizontalVelocity.y + this.externalVelocity.y) * dt;
+    this.externalVelocity.set(0, 0);
 
     this.verticalVelocity -= 26 * dt;
     if (this.grounded && this.verticalVelocity < 0) {

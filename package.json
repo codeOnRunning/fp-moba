@@ -1,9 +1,9 @@
 {
   "name": "fp-moba",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
-  "description": "First-person single-player MOBA vertical slice (M0)",
+  "description": "First-person single-player MOBA boss rush prototype",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

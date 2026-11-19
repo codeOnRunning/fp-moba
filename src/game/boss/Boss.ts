@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { DummyShot } from '../Dummy';
 
-export type BossVariant = 'star' | 'void';
+export type BossVariant = 'star' | 'void' | 'colossus';
 
 export interface BossAttackEvent {
   type: 'slam' | 'shockwave' | 'void';
@@ -21,6 +21,9 @@ export interface BossCallbacks {
   onTeleport?: (position: THREE.Vector3) => void;
   onHomingOrbs?: (origin: THREE.Vector3, count: number) => void;
   onMirror?: () => void;
+  onLaser?: () => void;
+  onGravity?: () => void;
+  onMeteors?: (center: THREE.Vector3, count: number) => void;
 }
 
 export class Boss {
@@ -39,6 +42,7 @@ export class Boss {
   private phaseAnnounced = false;
   private voidTeleportCooldown = 3.8;
   private voidAttackCount = 0;
+  private colossusAttackCount = 0;
 
   constructor(
     world: RAPIER.World,
@@ -84,6 +88,7 @@ export class Boss {
     this.variant = variant;
     this.voidTeleportCooldown = 3.8;
     this.voidAttackCount = 0;
+    this.colossusAttackCount = 0;
   }
 
   get isVoid(): boolean {
@@ -95,6 +100,11 @@ export class Boss {
 
     if (this.variant === 'void') {
       this.updateVoid(dt, playerPosition);
+      return;
+    }
+
+    if (this.variant === 'colossus') {
+      this.updateColossus(dt, playerPosition);
       return;
     }
 
@@ -149,6 +159,47 @@ export class Boss {
       directions.push(base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spread));
     }
     this.callbacks.onBarrage(origin, directions);
+  }
+
+  private updateColossus(dt: number, playerPosition: THREE.Vector3): void {
+    const current = this.body.translation();
+    const side = current.x >= playerPosition.x ? 1 : -1;
+    const targetX = THREE.MathUtils.clamp(
+      playerPosition.x + side * 6,
+      -23,
+      14,
+    );
+    this.body.setNextKinematicTranslation({
+      x: THREE.MathUtils.damp(current.x, targetX, 0.18, dt),
+      y: this.home.y,
+      z: this.home.z,
+    });
+
+    this.attackCooldown -= dt;
+    if (this.attackCooldown > 0) return;
+    this.attackCooldown = this.phase === 1 ? 3.0 : 2.2;
+    this.colossusAttackCount += 1;
+
+    if (
+      this.phase === 2 &&
+      this.colossusAttackCount % 4 === 0
+    ) {
+      this.callbacks.onLaser?.();
+      this.callbacks.onGravity?.();
+      return;
+    }
+
+    const choice = this.colossusAttackCount % 3;
+    if (choice === 1) {
+      this.callbacks.onLaser?.();
+    } else if (choice === 2) {
+      this.callbacks.onGravity?.();
+    } else {
+      this.callbacks.onMeteors?.(
+        playerPosition,
+        this.phase === 2 ? 5 : 3,
+      );
+    }
   }
 
   private updateVoid(dt: number, playerPosition: THREE.Vector3): void {
@@ -250,6 +301,7 @@ export class Boss {
     this.attackCooldown = 2.2;
     this.voidTeleportCooldown = 3.8;
     this.voidAttackCount = 0;
+    this.colossusAttackCount = 0;
     this.hitFlash = 0;
     this.body.setTranslation(
       { x: this.home.x, y: this.home.y, z: this.home.z },
@@ -261,6 +313,9 @@ export class Boss {
   get phaseLabel(): string {
     if (this.variant === 'void') {
       return this.phase === 1 ? '第一阶段' : '第二阶段 · 虚空回响';
+    }
+    if (this.variant === 'colossus') {
+      return this.phase === 1 ? '第一阶段' : '第二阶段 · 星环崩解';
     }
     return this.phase === 1 ? '第一阶段' : '第二阶段 · 星环解放';
   }

@@ -14,6 +14,7 @@ import {
 } from './boss/Boss';
 import { BossAdd } from './boss/BossAdd';
 import { BossTelegraph } from './boss/BossTelegraph';
+import { RotatingLaser } from './boss/RotatingLaser';
 import { Hud } from './Hud';
 import { InputController } from './InputController';
 import { createArtMap } from './art/EnvironmentBuilder';
@@ -53,11 +54,12 @@ const E_MANA_COST = 20;
 const R_COOLDOWN = 45;
 const R_MANA_COST = 50;
 const BASIC_COOLDOWN = 0.32;
-const BOSS_SEQUENCE: BossVariant[] = ['star', 'void'];
+const BOSS_SEQUENCE: BossVariant[] = ['star', 'void', 'colossus'];
 const BOSS_ROUNDS = BOSS_SEQUENCE.length;
 const BOSS_CONFIG: Record<BossVariant, { name: string; health: number }> = {
   star: { name: '星蚀守卫', health: 1800 },
   void: { name: '虚空术士', health: 2200 },
+  colossus: { name: '星环巨像', health: 2400 },
 };
 const BOSS_DAMAGE_GROWTH = 0.15;
 
@@ -81,6 +83,10 @@ export class Game {
   private bossIntroRemaining = 0;
   private bossTransitionRemaining = 0;
   private bossInvulnerableTime = 0;
+  private rotatingLaser: RotatingLaser | null = null;
+  private laserTime = 0;
+  private laserDamageCooldown = 0;
+  private gravityPullTime = 0;
   private mageView!: CharacterView;
   private enemyView!: CharacterView;
   private projectiles!: ProjectileSystem;
@@ -275,6 +281,9 @@ export class Game {
       onTeleport: (position) => this.onBossTeleport(position),
       onHomingOrbs: (origin, count) => this.onBossHomingOrbs(origin, count),
       onMirror: () => this.onBossMirror(),
+      onLaser: () => this.onBossLaser(),
+      onGravity: () => this.onBossGravity(),
+      onMeteors: (center, count) => this.onBossMeteors(center, count),
     });
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
@@ -370,6 +379,8 @@ export class Game {
         bossTransitionRemaining: this.bossTransitionRemaining,
         bossInvulnerableTime: this.bossInvulnerableTime,
         bossAdds: this.bossAdds.length,
+        laserTime: this.laserTime,
+        gravityPullTime: this.gravityPullTime,
         playerLevel: this.playerLevel,
         playerXp: this.playerXp,
         xpToNext: this.xpToNext,
@@ -432,11 +443,12 @@ export class Game {
 
   private createEnemyView(kind: BossVariant): CharacterView {
     const isVoid = kind === 'void';
+    const isColossus = kind === 'colossus';
     const view = new CharacterView(
       this.assets.skeleton,
-      isVoid ? 1.08 : 1.15,
-      isVoid ? 0xc99bff : 0x8a91a8,
-      isVoid ? 0x4f1688 : 0x4b0b1f,
+      isColossus ? 1.45 : isVoid ? 1.08 : 1.15,
+      isColossus ? 0xffc36b : isVoid ? 0xc99bff : 0x8a91a8,
+      isColossus ? 0x7a3d00 : isVoid ? 0x4f1688 : 0x4b0b1f,
     );
     view.setPosition(
       this.dummy.position.x,
@@ -818,7 +830,47 @@ export class Game {
     this.mageActionLock = Math.max(0, this.mageActionLock - dt);
     this.enemyActionLock = Math.max(0, this.enemyActionLock - dt);
 
+    if (this.gravityPullTime > 0 && !this.playerDead) {
+      this.gravityPullTime = Math.max(0, this.gravityPullTime - dt);
+      const pull = this.dummy.position
+        .clone()
+        .sub(this.player.position);
+      pull.y = 0;
+      if (pull.lengthSq() > 0.01) {
+        pull.normalize().multiplyScalar(3.1);
+        this.player.applyExternalForce(pull.x, pull.z);
+      }
+    }
+
     this.player.update(dt, move, this.input.yaw);
+
+    if (this.rotatingLaser && this.laserTime > 0) {
+      this.laserTime = Math.max(0, this.laserTime - dt);
+      this.rotatingLaser.setPosition(this.dummy.position);
+      this.rotatingLaser.update(dt);
+      this.laserDamageCooldown = Math.max(
+        0,
+        this.laserDamageCooldown - dt,
+      );
+      if (
+        !this.playerDead &&
+        this.laserDamageCooldown <= 0 &&
+        this.rotatingLaser.hits(this.player.position)
+      ) {
+        this.laserDamageCooldown = 0.55;
+        this.showIncomingDirection(this.dummy.position);
+        this.onPlayerHit(
+          Math.round(12 * this.bossRoundDamage),
+          this.player.position.clone(),
+          'enemy',
+        );
+      }
+      if (this.laserTime <= 0) {
+        this.rotatingLaser.dispose();
+        this.rotatingLaser = null;
+      }
+    }
+
     if (this.bossIntroRemaining <= 0 && this.bossTransitionRemaining <= 0) {
       this.dummy.update(dt, this.player.position);
     }
@@ -1522,7 +1574,11 @@ export class Game {
     this.bossInvulnerableTime = 1.2;
     this.hud.showBossIntro(
       '第二阶段',
-      this.dummy.isVoid ? '虚空回响' : '星环解放',
+      this.dummy.variant === 'void'
+        ? '虚空回响'
+        : this.dummy.variant === 'colossus'
+          ? '星环崩解'
+          : '星环解放',
     );
     this.hud.showToast(
       `${this.bossDisplayName} · ${this.dummy.phaseLabel}`,
@@ -1561,6 +1617,12 @@ export class Game {
     if (this.dummy.isVoid) {
       this.hud.showToast('虚空术士召唤镜像', 1100);
       this.spawnBossAdds('mirror', 2);
+      return;
+    }
+    if (this.dummy.variant === 'colossus') {
+      this.hud.showToast('星环巨像 · 星环崩解', 1200);
+      this.onBossLaser();
+      this.onBossMeteors(this.player.position, 4);
       return;
     }
     this.hud.showToast('星蚀碎片被召唤', 1100);
@@ -1607,6 +1669,70 @@ export class Game {
     );
   }
 
+  private onBossLaser(): void {
+    if (this.rotatingLaser) {
+      this.rotatingLaser.dispose();
+    }
+    this.rotatingLaser = new RotatingLaser(this.scene, this.dummy.position);
+    this.laserTime = this.dummy.phase === 2 ? 5.2 : 4.2;
+    this.laserDamageCooldown = 0;
+    this.hud.showToast('星环激光 · 注意旋转方向', 1100);
+    this.audio.enemyShoot();
+  }
+
+  private onBossGravity(): void {
+    this.gravityPullTime = this.dummy.phase === 2 ? 3.2 : 2.4;
+    this.hud.showToast('引力牵引 · 反向移动抵抗', 1200);
+    this.effects.castPulse(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
+      0xffc36b,
+    );
+    this.audio.enemyShoot();
+  }
+
+  private onBossMeteors(center: THREE.Vector3, count: number): void {
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + Math.random() * 0.4;
+      const distance = index === 0 ? 0 : 1.5 + Math.random() * 4.5;
+      const position = new THREE.Vector3(
+        THREE.MathUtils.clamp(center.x + Math.cos(angle) * distance, -24, 15),
+        0.07,
+        THREE.MathUtils.clamp(center.z + Math.sin(angle) * distance, -9, 9),
+      );
+      const radius = 2.0;
+      this.bossTelegraphs.push(
+        new BossTelegraph(this.scene, {
+          position,
+          radius,
+          delay: 0.9 + index * 0.08,
+          color: 0xff8a3d,
+          onComplete: (impact, impactRadius) => {
+            this.effects.impact(
+              impact.clone().add(new THREE.Vector3(0, 0.3, 0)),
+              0xff8a3d,
+              1.8,
+            );
+            this.audio.enemyShoot();
+            const distanceToPlayer = horizontalDistance(impact, this.player.position);
+            if (
+              !this.playerDead &&
+              !this.player.isAirborne &&
+              distanceToPlayer <= impactRadius
+            ) {
+              this.showIncomingDirection(this.dummy.position);
+              this.onPlayerHit(
+                Math.round(16 * this.bossRoundDamage),
+                this.player.position.clone(),
+                'enemy',
+              );
+            }
+          },
+        }),
+      );
+    }
+    this.hud.showToast('陨星雨', 900);
+  }
+
   private updateBossAdds(dt: number): void {
     for (const { add } of this.bossAdds) {
       add.update(dt, this.player.position);
@@ -1645,6 +1771,14 @@ export class Game {
     for (const { add } of this.bossAdds.splice(0)) add.dispose();
   }
 
+  private clearBossMechanics(): void {
+    this.rotatingLaser?.dispose();
+    this.rotatingLaser = null;
+    this.laserTime = 0;
+    this.laserDamageCooldown = 0;
+    this.gravityPullTime = 0;
+  }
+
   private updateBossTelegraphs(dt: number): void {
     for (let i = this.bossTelegraphs.length - 1; i >= 0; i -= 1) {
       if (!this.bossTelegraphs[i].update(dt)) {
@@ -1673,6 +1807,7 @@ export class Game {
     this.beam.hide();
     this.projectiles.clear();
     this.clearBossAdds();
+    this.clearBossMechanics();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
 
@@ -1744,6 +1879,7 @@ export class Game {
     this.beam.hide();
     this.projectiles.clear();
     this.clearBossAdds();
+    this.clearBossMechanics();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
     this.wPreview.setRadiusScale(this.wRadius / 5.2);
@@ -1777,6 +1913,7 @@ export class Game {
     this.deathRemaining = 3;
     this.projectiles.clear();
     this.clearBossAdds();
+    this.clearBossMechanics();
     this.hud.hideBossIntro();
     this.qHeld = false;
     this.qCharge = 0;
