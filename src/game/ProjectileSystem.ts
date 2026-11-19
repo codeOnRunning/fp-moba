@@ -193,6 +193,7 @@ export class ProjectileSystem {
   ): void {
     for (let i = this.projectiles.length - 1; i >= 0; i -= 1) {
       const projectile = this.projectiles[i];
+      if (!projectile) continue;
 
       if (
         projectile.homing > 0 &&
@@ -273,6 +274,7 @@ export class ProjectileSystem {
 
   private remove(index: number): void {
     const projectile = this.projectiles[index];
+    if (!projectile) return;
     this.scene.remove(projectile.mesh);
     this.scene.remove(projectile.glow);
     this.projectiles.splice(index, 1);
