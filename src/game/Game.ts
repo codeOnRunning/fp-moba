@@ -109,6 +109,8 @@ export class Game {
   private input!: InputController;
   private mageActionLock = 0;
   private enemyActionLock = 0;
+  private readonly lastEnemyPosition = new THREE.Vector3();
+  private enemyShotCount = 0;
   private isMoving = false;
 
   private viewmodel!: THREE.Group;
@@ -402,6 +404,7 @@ export class Game {
       spawns.dummySpawn.z,
     );
     this.scene.add(this.enemyView.root);
+    this.lastEnemyPosition.copy(this.dummy.position);
 
     this.projectiles = new ProjectileSystem(this.scene);
     this.effects = new Effects(this.scene);
@@ -601,7 +604,7 @@ export class Game {
     const isColossus = kind === 'colossus';
     const view = new CharacterView(
       this.assets.skeleton,
-      isColossus ? 1.45 : isVoid ? 1.08 : 1.15,
+      isColossus ? 1.95 : isVoid ? 1.42 : 1.5,
       isColossus ? 0xffc36b : isVoid ? 0xc99bff : 0x8a91a8,
       isColossus ? 0x7a3d00 : isVoid ? 0x4f1688 : 0x4b0b1f,
     );
@@ -891,6 +894,11 @@ export class Game {
       speed: 12 * this.difficultyConfig.projectileSpeedScale,
     });
     this.effects.muzzle(origin, 0xff5c7a);
+    this.enemyShotCount += 1;
+    this.playEnemyAction(
+      this.enemyShotCount % 2 === 0 ? '1H_Ranged_Shoot' : 'Spellcast_Shoot',
+      0.55,
+    );
     this.audio.enemyShoot();
   }
 
@@ -1019,6 +1027,9 @@ export class Game {
     this.bossIntroRemaining = duration;
     this.bossTransitionRemaining = 0;
     this.bossInvulnerableTime = duration;
+    if (this.enemyView && this.dummy.alive) {
+      this.playEnemyAction('Skeletons_Awaken_Standing', duration);
+    }
     this.hud.showBossIntro(
       this.bossDisplayName,
       this.gameMode === 'lane'
@@ -1491,8 +1502,22 @@ export class Game {
         ),
       );
     }
+    const enemyMoved =
+      horizontalDistance(this.dummy.position, this.lastEnemyPosition) > 0.004;
+    this.lastEnemyPosition.copy(this.dummy.position);
     if (this.enemyActionLock <= 0 && this.dummy.alive) {
-      this.enemyView.play('Idle', 0.18);
+      const distanceToPlayer = horizontalDistance(
+        this.dummy.position,
+        this.player.position,
+      );
+      this.enemyView.play(
+        enemyMoved
+          ? 'Walking_A'
+          : distanceToPlayer < 18
+            ? 'Idle_Combat'
+            : 'Idle',
+        0.18,
+      );
     }
     this.enemyView.update(dt);
     this.updateBossAdds(dt);
@@ -2182,7 +2207,20 @@ export class Game {
     );
   }
 
+  private playEnemyAction(name: string, duration: number): void {
+    if (!this.enemyView.hasAction(name)) return;
+    this.enemyView.play(name, 0.08, true);
+    this.enemyActionLock = Math.max(this.enemyActionLock, duration);
+  }
+
   private onBossAttack(attack: BossAttackEvent): void {
+    const action =
+      attack.type === 'slam'
+        ? '2H_Melee_Attack_Chop'
+        : attack.type === 'shockwave'
+          ? '2H_Melee_Attack_Spin'
+          : 'Spellcast_Raise';
+    this.playEnemyAction(action, attack.delay + 0.35);
     const color =
       attack.type === 'slam'
         ? 0xff5c7a
@@ -2237,14 +2275,18 @@ export class Game {
       });
     }
     this.effects.muzzle(origin, 0xff5c7a);
-    this.enemyView.play('Spellcast_Shoot', 0.06, true);
-    this.enemyActionLock = 0.6;
+    this.enemyShotCount += 1;
+    this.playEnemyAction(
+      this.enemyShotCount % 2 === 0 ? 'Spellcast_Shoot' : '1H_Ranged_Shoot',
+      0.65,
+    );
     this.audio.enemyShoot();
   }
 
   private onBossPhaseTwo(): void {
     this.bossTransitionRemaining = 1.2;
     this.bossInvulnerableTime = 1.2;
+    this.playEnemyAction('Taunt_Longer', 1.2);
     this.hud.showBossIntro(
       '第二阶段',
       this.dummy.variant === 'void'
@@ -2289,6 +2331,7 @@ export class Game {
 
   private onBossSummon(): void {
     if (this.gameMode === 'lane') return;
+    this.playEnemyAction('Spellcast_Summon', 0.8);
     const extra = this.bossModifier === 'split' ? 1 : 0;
     if (this.dummy.isVoid) {
       this.hud.showToast('虚空术士召唤镜像', 1100);
@@ -2474,6 +2517,11 @@ export class Game {
       speed: 13 * this.difficultyConfig.projectileSpeedScale,
     });
     this.effects.muzzle(shot.origin, 0xff5c7a);
+    this.enemyShotCount += 1;
+    this.playEnemyAction(
+      this.enemyShotCount % 2 === 0 ? '1H_Ranged_Shoot' : 'Spellcast_Shoot',
+      0.55,
+    );
     this.audio.enemyShoot();
   }
 
