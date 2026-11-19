@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { CharacterView } from '../art/CharacterView';
 
 export type LaneTeam = 'player' | 'enemy';
 
@@ -12,7 +13,8 @@ export class LaneMinion {
   health = 70;
   alive = true;
 
-  private readonly material: THREE.MeshStandardMaterial;
+  private readonly view?: CharacterView;
+  private readonly material?: THREE.MeshStandardMaterial;
   private attackCooldown = 0.8 + Math.random() * 0.8;
   private age = 0;
 
@@ -23,9 +25,11 @@ export class LaneMinion {
     team: LaneTeam,
     id: number,
     private readonly onDeath: () => void,
+    view?: CharacterView,
   ) {
     this.team = team;
     this.id = id;
+    this.view = view;
     this.body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
         position.x,
@@ -34,38 +38,49 @@ export class LaneMinion {
       ),
     );
     this.collider = world.createCollider(
-      RAPIER.ColliderDesc.capsule(0.34, 0.35),
+      RAPIER.ColliderDesc.capsule(0.3, 0.3),
       this.body,
     );
-    const color = team === 'player' ? 0x57e0f0 : 0xff5c7a;
-    this.material = new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.45,
-      roughness: 0.45,
-      metalness: 0.25,
-    });
-    this.group = new THREE.Group();
-    this.group.position.copy(position);
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.3, 0.48, 4, 8),
-      this.material,
-    );
-    body.position.y = 0.55;
-    this.group.add(body);
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 8, 6),
-      this.material,
-    );
-    head.position.y = 0.95;
-    this.group.add(head);
-    const blade = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.7, 0.08),
-      new THREE.MeshBasicMaterial({ color: 0xffe6a8 }),
-    );
-    blade.position.set(0.38, 0.55, 0);
-    blade.rotation.z = -0.35;
-    this.group.add(blade);
+
+    if (view) {
+      this.group = view.root;
+      this.group.position.set(
+        position.x,
+        position.y - 0.95 + view.groundOffset,
+        position.z,
+      );
+      view.play('Walking_A', 0);
+    } else {
+      const color = team === 'player' ? 0x57e0f0 : 0xff5c7a;
+      this.material = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.45,
+        roughness: 0.45,
+        metalness: 0.25,
+      });
+      this.group = new THREE.Group();
+      this.group.position.copy(position);
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.3, 0.48, 4, 8),
+        this.material,
+      );
+      body.position.y = 0.55;
+      this.group.add(body);
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 8, 6),
+        this.material,
+      );
+      head.position.y = 0.95;
+      this.group.add(head);
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.7, 0.08),
+        new THREE.MeshBasicMaterial({ color: 0xffe6a8 }),
+      );
+      blade.position.set(0.38, 0.55, 0);
+      blade.rotation.z = -0.35;
+      this.group.add(blade);
+    }
     scene.add(this.group);
   }
 
@@ -82,7 +97,8 @@ export class LaneMinion {
     const dx = target.x - current.x;
     const dz = target.z - current.z;
     const distance = Math.hypot(dx, dz);
-    if (distance > 1.8) {
+    const moving = distance > 1.8;
+    if (moving) {
       const step = Math.min(1.55 * dt, distance - 1.4);
       this.body.setNextKinematicTranslation({
         x: current.x + (dx / Math.max(distance, 0.001)) * step,
@@ -91,9 +107,20 @@ export class LaneMinion {
       });
     }
     const translation = this.body.translation();
-    this.group.position.set(translation.x, translation.y - 0.95, translation.z);
+    this.group.position.set(
+      translation.x,
+      this.view
+        ? translation.y - 0.95 + this.view.groundOffset
+        : translation.y - 0.95,
+      translation.z,
+    );
     this.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
-    this.group.scale.setScalar(1 + Math.sin(this.age * 5) * 0.03);
+    if (this.view) {
+      this.view.play(moving ? 'Walking_A' : 'Idle', 0.12);
+      this.view.update(dt);
+    } else {
+      this.group.scale.setScalar(1 + Math.sin(this.age * 5) * 0.03);
+    }
   }
 
   tryAttack(): boolean {
@@ -105,9 +132,10 @@ export class LaneMinion {
   takeDamage(amount: number): boolean {
     if (!this.alive) return false;
     this.health = Math.max(0, this.health - amount);
-    this.material.emissiveIntensity = 2.2;
+    if (this.material) this.material.emissiveIntensity = 2.2;
+    if (this.view) this.view.play('Hit_A', 0.04, true);
     window.setTimeout(() => {
-      if (this.alive) this.material.emissiveIntensity = 0.45;
+      if (this.alive && this.material) this.material.emissiveIntensity = 0.45;
     }, 70);
     if (this.health <= 0) {
       this.alive = false;

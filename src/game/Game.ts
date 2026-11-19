@@ -22,6 +22,7 @@ import { InputController } from './InputController';
 import { createArtMap } from './art/EnvironmentBuilder';
 import { loadArtAssets, type ArtAssets } from './art/AssetLibrary';
 import { CharacterView } from './art/CharacterView';
+import { addEnemyCosmetics, addMageCosmetics } from './art/Cosmetics';
 import { PlayerController } from './PlayerController';
 import { ProjectileSystem, type ProjectileKind } from './ProjectileSystem';
 import { SettingsPanel } from './SettingsPanel';
@@ -373,6 +374,7 @@ export class Game {
       1.2,
       0.78,
     );
+    addMageCosmetics(this.mageView.root);
     this.mageView.setVisible(false);
     this.scene.add(this.mageView.root);
 
@@ -603,6 +605,7 @@ export class Game {
       isColossus ? 0xffc36b : isVoid ? 0xc99bff : 0x8a91a8,
       isColossus ? 0x7a3d00 : isVoid ? 0x4f1688 : 0x4b0b1f,
     );
+    addEnemyCosmetics(view.root, kind);
     view.setPosition(
       this.dummy.position.x,
       view.groundOffset,
@@ -822,6 +825,16 @@ export class Game {
     for (const minion of this.laneMinions.splice(0)) minion.dispose();
   }
 
+  private createLaneMinionView(team: 'player' | 'enemy'): CharacterView {
+    return new CharacterView(
+      team === 'player' ? this.assets.mage : this.assets.skeleton,
+      team === 'player' ? 0.3 : 0.38,
+      team === 'player' ? 0xaeefff : 0xffa0b2,
+      team === 'player' ? 0x0b3a66 : 0x4a0014,
+      team === 'player',
+    );
+  }
+
   private spawnLaneWave(): void {
     for (let index = 0; index < 3; index += 1) {
       const z = (index - 1) * 1.4;
@@ -833,6 +846,7 @@ export class Game {
           'player',
           this.laneNextId++,
           () => {},
+          this.createLaneMinionView('player'),
         ),
       );
       this.laneMinions.push(
@@ -843,6 +857,7 @@ export class Game {
           'enemy',
           this.laneNextId++,
           () => this.onLaneMinionDeath(),
+          this.createLaneMinionView('enemy'),
         ),
       );
     }
