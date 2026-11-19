@@ -146,6 +146,7 @@ export class Game {
   private laneWaveTimer = 0;
   private laneNextId = 100000;
   private laneNextStructureId = 200000;
+  private laneEnemyAttackTimer = 1.2;
   private runRound = 1;
   private readonly upgrades = new Map<UpgradeId, number>();
   private runFinished = false;
@@ -763,6 +764,7 @@ export class Game {
     this.clearLaneMinions();
     this.clearLaneStructures();
     this.laneWaveTimer = 1.5;
+    this.laneEnemyAttackTimer = 1.2;
     this.dummy.setVariant('star');
     this.dummy.setMaxHealth(1200);
     this.applyBossModifiers();
@@ -830,6 +832,36 @@ export class Game {
       );
     }
     this.hud.showToast('新一波小兵出发', 900);
+  }
+
+  private updateLaneEnemyAI(dt: number): void {
+    if (!this.dummy.alive) return;
+    const current = this.dummy.position;
+    const ratio = this.dummy.health / this.dummy.maxHealth;
+    const side = current.x >= this.player.position.x ? 1 : -1;
+    const targetX =
+      ratio < 0.3
+        ? 16
+        : THREE.MathUtils.clamp(this.player.position.x + side * 5, -11, 15);
+    this.dummy.body.setNextKinematicTranslation({
+      x: THREE.MathUtils.damp(current.x, targetX, 0.2, dt),
+      y: 0.95,
+      z: 0,
+    });
+    this.laneEnemyAttackTimer -= dt;
+    if (this.laneEnemyAttackTimer > 0) return;
+    this.laneEnemyAttackTimer = ratio < 0.3 ? 2.2 : 1.6;
+    const origin = new THREE.Vector3(current.x, 1.45, 0);
+    const aim = this.player.position
+      .clone()
+      .add(new THREE.Vector3(0, 0.25, 0));
+    const direction = aim.sub(origin).normalize();
+    this.projectiles.spawn(origin, direction, 'enemy', 'dummy', {
+      damage: 6,
+      speed: 12 * this.difficultyConfig.projectileSpeedScale,
+    });
+    this.effects.muzzle(origin, 0xff5c7a);
+    this.audio.enemyShoot();
   }
 
   private updateLaneMinions(dt: number): void {
@@ -1387,7 +1419,11 @@ export class Game {
     }
 
     if (this.bossIntroRemaining <= 0 && this.bossTransitionRemaining <= 0) {
-      this.dummy.update(dt, this.player.position);
+      if (this.gameMode === 'lane') {
+        this.updateLaneEnemyAI(dt);
+      } else {
+        this.dummy.update(dt, this.player.position);
+      }
     }
     this.world.step();
     this.player.sync();
@@ -2599,6 +2635,7 @@ export class Game {
     this.elapsed = 0;
     if (this.gameMode === 'lane') {
       this.laneWaveTimer = 1.5;
+      this.laneEnemyAttackTimer = 1.2;
       this.clearLaneMinions();
       this.clearLaneStructures();
       this.spawnLaneStructures();
