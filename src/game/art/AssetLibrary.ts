@@ -53,10 +53,14 @@ function loadModel(url: string): Promise<LoadedModel> {
 
 export async function loadArtAssets(): Promise<ArtAssets> {
   const [mage, skeleton, ...dungeonModels] = await Promise.all([
-    loadModel('/assets/kaykit/characters/Mage.glb'),
-    loadModel('/assets/kaykit/characters/Skeleton_Warrior.glb'),
+    loadModel(`${import.meta.env.BASE_URL}assets/kaykit/characters/Mage.glb`),
+    loadModel(
+      `${import.meta.env.BASE_URL}assets/kaykit/characters/Skeleton_Warrior.glb`,
+    ),
     ...DUNGEON_FILES.map((name) =>
-      loadModel(`/assets/kaykit/dungeon/${name}.gltf.glb`),
+      loadModel(
+        `${import.meta.env.BASE_URL}assets/kaykit/dungeon/${name}.gltf.glb`,
+      ),
     ),
   ]);
 
