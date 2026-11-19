@@ -1,0 +1,16 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
+await page.selectOption('#mode-select','lane');
+await page.locator('#start-button').click(); await page.waitForTimeout(5000);
+const before=await page.evaluate(()=>window.__fpMoba?.state());
+await page.evaluate(()=>window.__fpMoba?.damageLaneStructures(9999)); await page.waitForTimeout(700);
+const after=await page.evaluate(()=>window.__fpMoba?.state());
+const victoryVisible=await page.locator('#victory-screen').isVisible().catch(()=>false);
+const victoryText=await page.locator('#victory-screen').textContent().catch(()=>'');
+console.log(JSON.stringify({before:{laneStructures:before?.laneStructures,gold:before?.gold},after:{bossDefeated:after?.bossDefeated,runFinished:after?.runFinished,laneStructures:after?.laneStructures},victoryVisible,victoryText:victoryText.slice(0,160),errors},null,2));
+await page.screenshot({path:'screenshots/p6-lane-victory.png'});
+await browser.close();

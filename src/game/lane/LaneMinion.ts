@@ -22,7 +22,6 @@ export class LaneMinion {
     position: THREE.Vector3,
     team: LaneTeam,
     id: number,
-    private readonly onAttack: (damage: number) => void,
     private readonly onDeath: () => void,
   ) {
     this.team = team;
@@ -90,14 +89,17 @@ export class LaneMinion {
         y: 0.95,
         z: current.z + (dz / Math.max(distance, 0.001)) * step,
       });
-    } else if (this.attackCooldown <= 0) {
-      this.attackCooldown = 1.5;
-      this.onAttack(this.team === 'enemy' ? 4 : 8);
     }
     const translation = this.body.translation();
     this.group.position.set(translation.x, translation.y - 0.95, translation.z);
     this.group.rotation.y = Math.atan2(dx, dz) + Math.PI;
     this.group.scale.setScalar(1 + Math.sin(this.age * 5) * 0.03);
+  }
+
+  tryAttack(): boolean {
+    if (this.attackCooldown > 0) return false;
+    this.attackCooldown = 1.5;
+    return true;
   }
 
   takeDamage(amount: number): boolean {

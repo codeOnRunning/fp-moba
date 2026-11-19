@@ -5,7 +5,7 @@ const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('consol
 await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
 await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
 await page.selectOption('#mode-select','lane');
-await page.locator('#start-button').click(); await page.waitForTimeout(6000);
+await page.locator('#start-button').click(); await page.waitForTimeout(5000);
 await page.evaluate(()=>window.__fpMoba?.faceDummy()); await page.waitForTimeout(500);
 console.log(JSON.stringify({perf:await page.locator('#perf').textContent(),state:await page.evaluate(()=>window.__fpMoba?.state()),errors},null,2));
 await page.screenshot({path:'screenshots/p6-lane-1080p.png'});

@@ -16,6 +16,7 @@ import { BossAdd } from './boss/BossAdd';
 import { BossTelegraph } from './boss/BossTelegraph';
 import { RotatingLaser } from './boss/RotatingLaser';
 import { LaneMinion } from './lane/LaneMinion';
+import { LaneStructure } from './lane/LaneStructure';
 import { Hud } from './Hud';
 import { InputController } from './InputController';
 import { createArtMap } from './art/EnvironmentBuilder';
@@ -139,8 +140,10 @@ export class Game {
   private shopDamageBonus = 0;
   private shopHealthBonus = 0;
   private readonly laneMinions: LaneMinion[] = [];
+  private readonly laneStructures: LaneStructure[] = [];
   private laneWaveTimer = 0;
   private laneNextId = 100000;
+  private laneNextStructureId = 200000;
   private runRound = 1;
   private readonly upgrades = new Map<UpgradeId, number>();
   private runFinished = false;
@@ -450,6 +453,7 @@ export class Game {
         damagePlayer: (amount: number) => void;
         damageAdds: (amount: number) => void;
         damageLaneMinions: (amount: number) => void;
+        damageLaneStructures: (amount: number) => void;
         damagePlayerFrom: (x: number, z: number) => void;
       };
     }).__fpMoba = {
@@ -473,7 +477,16 @@ export class Game {
         bossName: this.bossDisplayName,
         difficulty: this.difficulty,
         gameMode: this.gameMode,
-        laneMinions: this.laneMinions.length,
+        laneMinions: this.laneMinions.map((minion) => ({
+          team: minion.team,
+          health: minion.health,
+          position: minion.position.toArray(),
+        })),
+        laneStructures: this.laneStructures.map((structure) => ({
+          kind: structure.kind,
+          health: structure.health,
+          alive: structure.alive,
+        })),
         gold: this.gold,
         kills: this.kills,
         bossModifier: this.bossModifier,
@@ -545,6 +558,13 @@ export class Game {
               minion.position.clone(),
               'q',
             );
+          }
+        }
+      },
+      damageLaneStructures: (amount: number) => {
+        for (const structure of [...this.laneStructures]) {
+          if (structure.alive) {
+            structure.takeDamage(amount);
           }
         }
       },
@@ -729,14 +749,44 @@ export class Game {
 
   private setupLaneMode(): void {
     this.clearLaneMinions();
+    this.clearLaneStructures();
     this.laneWaveTimer = 1.5;
     this.dummy.setVariant('star');
     this.dummy.setMaxHealth(1200);
     this.applyBossModifiers();
     this.dummy.respawn();
     this.replaceEnemyView();
+    this.spawnLaneStructures();
     this.beginBossIntro(1.4);
-    this.hud.showToast('中路试炼：清兵、赚金币，击破敌方核心', 2600);
+    this.hud.showToast('中路试炼：清兵、推塔，击破敌方水晶', 2600);
+  }
+
+  private spawnLaneStructures(): void {
+    this.laneStructures.push(
+      new LaneStructure(
+        this.world,
+        this.scene,
+        new THREE.Vector3(14, 1.6, 3),
+        this.laneNextStructureId++,
+        'tower',
+        (damage) =>
+          this.onPlayerHit(damage, this.player.position.clone(), 'enemy'),
+        () => this.hud.showToast('敌方防御塔已摧毁', 1200),
+      ),
+      new LaneStructure(
+        this.world,
+        this.scene,
+        new THREE.Vector3(17, 1.4, 0),
+        this.laneNextStructureId++,
+        'nexus',
+        () => {},
+        () => this.finishLaneRun(),
+      ),
+    );
+  }
+
+  private clearLaneStructures(): void {
+    for (const structure of this.laneStructures.splice(0)) structure.dispose();
   }
 
   private clearLaneMinions(): void {
@@ -753,15 +803,6 @@ export class Game {
           new THREE.Vector3(-12, 0.95, z),
           'player',
           this.laneNextId++,
-          (damage) => {
-            if (this.dummy.alive) {
-              this.onDummyHit(
-                damage,
-                this.dummy.position.clone(),
-                'basic',
-              );
-            }
-          },
           () => {},
         ),
       );
@@ -772,13 +813,6 @@ export class Game {
           new THREE.Vector3(14, 0.95, z),
           'enemy',
           this.laneNextId++,
-          (damage) => {
-            this.onPlayerHit(
-              damage,
-              this.player.position.clone(),
-              'enemy',
-            );
-          },
           () => this.onLaneMinionDeath(),
         ),
       );
@@ -787,10 +821,39 @@ export class Game {
   }
 
   private updateLaneMinions(dt: number): void {
-    for (const minion of this.laneMinions) {
-      const target =
-        minion.team === 'enemy' ? this.player.position : this.dummy.position;
+    const minions = [...this.laneMinions];
+    for (const minion of minions) {
+      if (!minion.alive) continue;
+      const opponent = minions
+        .filter((other) => other.alive && other.team !== minion.team)
+        .sort(
+          (a, b) =>
+            horizontalDistance(minion.position, a.position) -
+            horizontalDistance(minion.position, b.position),
+        )[0];
+      const structureTarget =
+        minion.team === 'player'
+          ? this.laneStructures.find((structure) => structure.alive)
+          : null;
+      const target = opponent
+        ? opponent.position
+        : minion.team === 'enemy'
+          ? this.player.position
+          : structureTarget?.position ?? this.dummy.position;
       minion.update(dt, target);
+
+      const distance = horizontalDistance(minion.position, target);
+      if (opponent && distance <= 1.8 && minion.tryAttack()) {
+        opponent.takeDamage(10);
+      } else if (!opponent && distance <= 1.8 && minion.tryAttack()) {
+        if (minion.team === 'enemy') {
+          this.onPlayerHit(4, this.player.position.clone(), 'enemy');
+        } else if (structureTarget) {
+          structureTarget.takeDamage(8);
+        } else if (this.dummy.alive) {
+          this.onDummyHit(8, this.dummy.position.clone(), 'basic');
+        }
+      }
     }
     for (let index = this.laneMinions.length - 1; index >= 0; index -= 1) {
       if (!this.laneMinions[index].alive) {
@@ -800,12 +863,66 @@ export class Game {
     }
   }
 
+  private finishLaneRun(): void {
+    if (this.runFinished) return;
+    this.runFinished = true;
+    this.bossDefeated = true;
+    this.running = false;
+    this.hud.hideBossIntro();
+    this.audio.stopMusic();
+    this.input.exitLock();
+    const previousBest = this.bestTime;
+    const isNewBest = previousBest === null || this.elapsed < previousBest;
+    if (isNewBest) {
+      this.bestTime = this.elapsed;
+      saveBestTime(this.elapsed);
+    }
+    const score = this.computeScore();
+    if (this.bestScore === null || score > this.bestScore) {
+      this.bestScore = score;
+      saveBestScore(score);
+    }
+    this.hud.showVictory(
+      this.elapsed,
+      this.playerHealth,
+      this.playerLevel,
+      this.bestTime,
+      isNewBest,
+      '敌方水晶',
+      this.buildSummary,
+      score,
+      this.bestScore,
+      this.difficultyConfig.label,
+      this.modifierDefinition.label,
+    );
+  }
+
   private onLaneMinionDeath(): void {
     this.gold += 12;
     this.kills += 1;
     this.gainExperience(20);
     this.hud.setGold(this.gold);
     this.hud.setKills(this.kills);
+  }
+
+  private onLaneStructureHit(
+    id: number,
+    damage: number,
+    point: THREE.Vector3,
+  ): void {
+    const structure = this.laneStructures.find(
+      (item) => item.alive && item.id === id,
+    );
+    if (!structure) return;
+    structure.takeDamage(Math.round(damage * this.damageMultiplier));
+    this.hud.hitMarker();
+    this.hud.showDamage(
+      point,
+      this.camera,
+      Math.round(damage * this.damageMultiplier),
+      'enemy',
+    );
+    this.effects.impact(point, 0xffc46b, 0.8);
   }
 
   private onLaneMinionHit(
@@ -1207,6 +1324,9 @@ export class Game {
         this.spawnLaneWave();
       }
       this.updateLaneMinions(dt);
+      for (const structure of this.laneStructures) {
+        structure.update(dt, this.player.position);
+      }
     }
 
     if (this.rotatingLaser && this.laserTime > 0) {
@@ -1279,7 +1399,9 @@ export class Game {
         onPlayerHit: (damage, point, kind) => this.onPlayerHit(damage, point, kind),
         onWallHit: (point, kind) => this.onWallHit(point, kind),
         onAddHit: (id, damage, point, kind) => {
-          if (id >= 100000) {
+          if (id >= 200000) {
+            this.onLaneStructureHit(id, damage, point);
+          } else if (id >= 100000) {
             this.onLaneMinionHit(id, damage, point, kind);
           } else {
             this.onBossAddHit(id, damage, point, kind);
@@ -1296,6 +1418,11 @@ export class Game {
           id: minion.id,
           collider: minion.collider,
           alive: minion.alive,
+        })),
+        ...this.laneStructures.map((structure) => ({
+          id: structure.id,
+          collider: structure.collider,
+          alive: structure.alive,
         })),
       ],
       this.player.position,
@@ -2229,12 +2356,16 @@ export class Game {
 
   private onDummyDeath(): void {
     if (this.bossDefeated || this.upgradePending || this.runFinished) return;
+    if (this.gameMode === 'lane') {
+      this.bossDefeated = true;
+      this.hud.setTarget(false);
+      this.hud.showToast('敌方英雄被击退 · 水晶仍在', 1600);
+      this.enemyView.play('Death_A', 0.1, true);
+      this.enemyActionLock = 3.0;
+      return;
+    }
     this.bossDefeated = true;
     this.running = false;
-    if (this.gameMode === 'lane') {
-      this.runRound = BOSS_ROUNDS;
-      this.clearLaneMinions();
-    }
     this.hud.hideBossIntro();
     this.audio.stopMusic();
     this.qHeld = false;
@@ -2437,6 +2568,8 @@ export class Game {
     if (this.gameMode === 'lane') {
       this.laneWaveTimer = 1.5;
       this.clearLaneMinions();
+      this.clearLaneStructures();
+      this.spawnLaneStructures();
     }
     this.player.teleport(this.respawnPosition);
     this.dummy.respawn();
