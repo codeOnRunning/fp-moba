@@ -1,8 +1,19 @@
-# Boss Rush v0.7.0a 开发状态
+# Boss Rush v0.8.0a 开发状态
 
 日期：2026-11-19  
-路线：Boss Rush / Roguelike  
-当前版本：**v0.7.0a · 三 Boss + UI/音频 + 发布候选**
+路线：Boss Rush / Roguelike + 中路试炼原型  
+当前版本：**v0.8.0a · 三 Boss + P6 第一切片**
+
+## P6 第一切片
+
+- 开始页模式选择：Boss Rush / 中路试炼
+- 中路试炼：双方各 3 小兵，12 秒一波
+- 小兵可被 Q/F/R/普攻命中
+- 敌方小兵死亡给 12 金币 + 20 XP
+- `B` 键商店：攻击法典 / 生命护符 / 星泉药剂
+- 敌方核心复用 Boss 控制器
+- 1080p：56 FPS / 196 draw calls / 208k tris
+- 详见 `docs/P6-验收记录.md`
 
 ## P5 完成内容
 
@@ -192,6 +203,8 @@
 - P5 1080p：Chrome / Edge 60 FPS / 182 draw calls / 207k tris
 - P5 3 分钟 soak：60 FPS / 0 error
 - P5 GitHub Pages workflow + MIT LICENSE + v0.7.0
+- P6 第一切片：中路试炼、小兵波次、金币/XP、B 键商店
+- P6 1080p：56 FPS / 196 draw calls / 208k tris
 
 ## 已知问题 / 下一轮
 
@@ -204,10 +217,11 @@
 7. 难度/词缀/评分公式需要真人试玩调参。
 8. 音乐为程序化环境音，按键重绑定只覆盖 Q/F/E/R/跳跃。
 9. Rapier 4.33 MB，GLB/纹理未压缩；30 分钟 soak 和 Firefox 回归待补。
-10. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
+10. P6 还缺防御塔/水晶、小兵互相交战、独立英雄 AI、完整 1v1。
+11. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
 
 ## 下一步
 
-1. 真人试玩三 Boss + 难度/词缀 + 新 HUD，确认体验。
-2. 补 30 分钟 soak、Firefox 回归、资源压缩。
-3. P6：小兵/防御塔/商店/敌方英雄 AI。
+1. 真人试玩三 Boss + 中路试炼第一切片。
+2. P6 继续：防御塔、水晶、小兵交战、独立英雄 AI。
+3. 补 30 分钟 soak、Firefox 回归、资源压缩。

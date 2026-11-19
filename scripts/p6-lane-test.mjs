@@ -1,0 +1,14 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
+await page.selectOption('#mode-select','lane');
+await page.locator('#start-button').click(); await page.waitForTimeout(5000);
+const before=await page.evaluate(()=>window.__fpMoba?.state());
+await page.evaluate(()=>window.__fpMoba?.damageLaneMinions(100)); await page.waitForTimeout(800);
+const after=await page.evaluate(()=>window.__fpMoba?.state());
+await page.screenshot({path:'screenshots/p6-lane.png'});
+console.log(JSON.stringify({before:{gameMode:before?.gameMode,bossName:before?.bossName,laneMinions:before?.laneMinions,gold:before?.gold,kills:before?.kills},after:{laneMinions:after?.laneMinions,gold:after?.gold,kills:after?.kills,level:after?.playerLevel},errors},null,2));
+await browser.close();

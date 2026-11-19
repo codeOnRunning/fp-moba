@@ -182,6 +182,13 @@
             走进星辉峡谷，依次击败星蚀守卫、虚空术士与星环巨像。
           </p>
           <div class="difficulty-row">
+            <label for="mode-select">模式</label>
+            <select id="mode-select">
+              <option value="boss" selected>Boss Rush · 三 Boss</option>
+              <option value="lane">中路试炼 · 小兵原型</option>
+            </select>
+          </div>
+          <div class="difficulty-row">
             <label for="difficulty-select">难度</label>
             <select id="difficulty-select">
               <option value="easy">简单 · 伤害 -25%</option>
@@ -276,6 +283,31 @@
           </div>
           <div class="settings-actions">
             <button id="help-close" class="primary-button" type="button">返回</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="shop-screen" class="screen settings-screen hidden">
+        <div class="screen-card settings-card shop-card">
+          <div class="eyebrow">MID LANE SHOP</div>
+          <div class="settings-heading">
+            <h2>星辉商店</h2>
+            <span class="settings-badge">B 打开</span>
+          </div>
+          <p id="shop-gold" class="lead">金币 0</p>
+          <div class="shop-grid">
+            <button class="shop-item" data-shop-item="damage" type="button">
+              <b>攻击法典</b><span>+10% 技能伤害</span><em>30 金币</em>
+            </button>
+            <button class="shop-item" data-shop-item="health" type="button">
+              <b>生命护符</b><span>+25 最大生命</span><em>30 金币</em>
+            </button>
+            <button class="shop-item" data-shop-item="heal" type="button">
+              <b>星泉药剂</b><span>立即回复 40 生命</span><em>20 金币</em>
+            </button>
+          </div>
+          <div class="settings-actions">
+            <button id="shop-close" class="primary-button" type="button">返回</button>
           </div>
         </div>
       </div>

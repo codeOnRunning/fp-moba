@@ -1,0 +1,20 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
+await page.selectOption('#mode-select','lane');
+await page.locator('#start-button').click(); await page.waitForTimeout(5000);
+await page.evaluate(()=>window.__fpMoba?.damageLaneMinions(100)); await page.waitForTimeout(600);
+const before=await page.evaluate(()=>window.__fpMoba?.state());
+await page.keyboard.press('b'); await page.waitForTimeout(500);
+const shopVisible=await page.locator('#shop-screen').isVisible();
+const goldText=await page.locator('#shop-gold').textContent();
+if (shopVisible) { await page.locator('[data-shop-item="damage"]').click(); await page.waitForTimeout(300); }
+const after=await page.evaluate(()=>window.__fpMoba?.state());
+await page.locator('#shop-close').click(); await page.waitForTimeout(300);
+const pauseVisible=await page.locator('#pause-screen').isVisible();
+await page.screenshot({path:'screenshots/p6-lane.png'});
+console.log(JSON.stringify({before:{laneMinions:before?.laneMinions,gold:before?.gold,kills:before?.kills},shopVisible,goldText,after:{gold:after?.gold},pauseVisible,errors},null,2));
+await browser.close();
