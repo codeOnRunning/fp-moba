@@ -1,7 +1,7 @@
 {
   "name": "fp-moba",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "description": "First-person single-player MOBA boss rush prototype",
   "scripts": {

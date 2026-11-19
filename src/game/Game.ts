@@ -1767,7 +1767,9 @@ export class Game {
     this.mageActionLock = 0.44;
     this.hud.pulseQ();
     this.audio.qCast();
-    this.effects.castPulse(this.getStaffTipWorldPosition(), 0xc7a4ff);
+    const staffTip = this.getStaffTipWorldPosition();
+    this.effects.castPulse(staffTip, 0xc7a4ff);
+    this.effects.ring(staffTip, 0xc7a4ff, 0.15, 0.9 + charge * 0.6, 0.24, 0.9);
     if (charge > 0.8) {
       this.hud.showToast('星弧飞弹 · 满蓄力', 550);
     }
@@ -1790,6 +1792,7 @@ export class Game {
         delay: 0.55,
         onExplode: (center, radius) => {
           this.effects.impact(center.clone().add(new THREE.Vector3(0, 0.2, 0)), 0x57e0f0, 1.8);
+          this.effects.rune(center.clone().add(new THREE.Vector3(0, 0.07, 0)), 0x57e0f0, radius, 0.9);
           this.audio.qCast();
           this.debugGravity = `center ${center.x.toFixed(1)},${center.z.toFixed(1)} dummy ${this.dummy.position.x.toFixed(1)},${this.dummy.position.z.toFixed(1)} dist ${horizontalDistance(center, this.dummy.position).toFixed(1)}`;
           if (
@@ -1853,6 +1856,7 @@ export class Game {
     this.hud.pulseAbility('e');
     this.audio.qCast();
     this.effects.castPulse(this.player.position.clone().add(new THREE.Vector3(0, 0.55, 0)), 0x9fe8ff);
+    this.effects.ring(this.player.position.clone().add(new THREE.Vector3(0, 0.08, 0)), 0x9fe8ff, 0.3, 1.4, 0.32);
     this.hud.showToast('折跃 · 0.24s 无敌帧', 650);
   }
 
@@ -1870,6 +1874,9 @@ export class Game {
     this.rCooldown = R_COOLDOWN * this.cooldownMultiplier;
     this.beamActiveTime = 2.5;
     this.beamTickTimer = 0;
+    const aimPoint = this.getGroundAimPoint(12);
+    this.effects.rune(aimPoint, 0x57e0f0, 3.4, 2.5);
+    this.effects.castPulse(aimPoint.clone().add(new THREE.Vector3(0, 0.3, 0)), 0x57e0f0);
     this.hud.pulseAbility('r');
     this.hud.showToast('天穹裂隙 · 引导中', 900);
     this.audio.qCast();
@@ -2243,6 +2250,14 @@ export class Game {
             color,
             2.2,
           );
+          this.effects.ring(
+            center.clone().add(new THREE.Vector3(0, 0.08, 0)),
+            color,
+            0.5,
+            radius * 1.7,
+            0.5,
+            0.9,
+          );
           this.audio.enemyShoot();
           const distance = horizontalDistance(center, this.player.position);
           this.debugBossAttack = `center ${center.x.toFixed(1)},${center.z.toFixed(1)} player ${this.player.position.x.toFixed(1)},${this.player.position.z.toFixed(1)} dist ${distance.toFixed(1)} radius ${radius}`;
@@ -2262,8 +2277,6 @@ export class Game {
         },
       }),
     );
-    this.enemyView.play('Spellcast_Shoot', 0.08, true);
-    this.enemyActionLock = 0.5;
     this.audio.enemyShoot();
   }
 
@@ -2303,6 +2316,12 @@ export class Game {
     this.effects.castPulse(
       this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
       0xff5c7a,
+    );
+    this.effects.rune(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 0.08, 0)),
+      0xff5c7a,
+      3.2,
+      1.8,
     );
     this.audio.qCast();
   }
@@ -2398,6 +2417,12 @@ export class Game {
     this.rotatingLaser = new RotatingLaser(this.scene, this.dummy.position);
     this.laserTime = this.dummy.phase === 2 ? 5.2 : 4.2;
     this.laserDamageCooldown = 0;
+    this.effects.rune(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 0.08, 0)),
+      0xffc36b,
+      4.2,
+      1.2,
+    );
     this.hud.showToast('星环激光 · 注意旋转方向', 1100);
     this.audio.enemyShoot();
   }
@@ -2408,6 +2433,12 @@ export class Game {
     this.effects.castPulse(
       this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
       0xffc36b,
+    );
+    this.effects.rune(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 0.08, 0)),
+      0xffc36b,
+      5.5,
+      2.4,
     );
     this.audio.enemyShoot();
   }
@@ -2435,6 +2466,14 @@ export class Game {
               impact.clone().add(new THREE.Vector3(0, 0.3, 0)),
               0xff8a3d,
               1.8,
+            );
+            this.effects.ring(
+              impact.clone().add(new THREE.Vector3(0, 0.08, 0)),
+              0xff8a3d,
+              0.5,
+              impactRadius * 1.8,
+              0.45,
+              0.9,
             );
             this.audio.enemyShoot();
             const distanceToPlayer = horizontalDistance(impact, this.player.position);

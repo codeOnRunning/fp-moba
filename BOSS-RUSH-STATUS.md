@@ -1,8 +1,17 @@
-# Boss Rush v0.9.0a 开发状态
+# Boss Rush v0.9.1a 开发状态
 
 日期：2026-11-19  
 路线：Boss Rush / Roguelike + 中路试炼原型  
-当前版本：**v0.9.0a · Art Pass 2.0 第一轮**
+当前版本：**v0.9.1a · Art Pass 2.0 + 攻击特效**
+
+## P9 攻击特效
+
+- Q/E/敌方飞弹拖尾
+- W 引力法阵、R 落点符文
+- Boss 重拳/冲击波/陨星落点扩散环
+- 阶段转换/引力/激光符文
+- Boss Rush 60 FPS / 238 draw calls / 210k tris
+- 详见 `docs/P9-攻击特效.md`
 
 ## P8 美术打磨
 

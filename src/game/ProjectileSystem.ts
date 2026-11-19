@@ -16,6 +16,7 @@ interface ProjectileConfig {
 interface Projectile {
   mesh: THREE.Mesh;
   glow: THREE.Sprite;
+  trail: THREE.Sprite;
   position: THREE.Vector3;
   direction: THREE.Vector3;
   kind: ProjectileKind;
@@ -165,9 +166,17 @@ export class ProjectileSystem {
     glow.renderOrder = 9;
     this.scene.add(glow);
 
+    const trail = new THREE.Sprite(glowMaterial.clone());
+    trail.position.copy(origin);
+    trail.scale.set(glowScale * 0.72, glowScale * 0.72, 1);
+    trail.material.opacity = 0.42;
+    trail.renderOrder = 7;
+    this.scene.add(trail);
+
     this.projectiles.push({
       mesh,
       glow,
+      trail,
       position: origin.clone(),
       direction: direction.clone().normalize(),
       kind,
@@ -210,6 +219,9 @@ export class ProjectileSystem {
       }
 
       const previous = projectile.position.clone();
+      projectile.trail.position.copy(previous);
+      const trailScale = projectile.radius * (projectile.kind === 'q' ? 10 : 7);
+      projectile.trail.scale.set(trailScale, trailScale, 1);
       const travel = projectile.speed * dt;
 
       projectile.position.addScaledVector(projectile.direction, travel);
@@ -277,6 +289,8 @@ export class ProjectileSystem {
     if (!projectile) return;
     this.scene.remove(projectile.mesh);
     this.scene.remove(projectile.glow);
+    this.scene.remove(projectile.trail);
+    projectile.trail.material.dispose();
     this.projectiles.splice(index, 1);
   }
 }

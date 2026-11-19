@@ -16,6 +16,16 @@ interface Flash {
   endScale: number;
 }
 
+interface RingPulse {
+  mesh: THREE.Mesh;
+  age: number;
+  life: number;
+  startScale: number;
+  endScale: number;
+  baseOpacity: number;
+  material: THREE.MeshBasicMaterial;
+}
+
 function makeGlowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
@@ -40,12 +50,14 @@ export class Effects {
   private readonly glowTexture = makeGlowTexture();
   private readonly bursts: ParticleBurst[] = [];
   private readonly flashes: Flash[] = [];
+  private readonly rings: RingPulse[] = [];
 
   constructor(private readonly scene: THREE.Scene) {}
 
   impact(position: THREE.Vector3, color: number, scale = 1): void {
     this.flash(position, color, 0.45 * scale, 1.8 * scale, 0.24);
     this.burst(position, color, Math.round(8 + scale * 5), 2.4 * scale, 0.36);
+    this.ring(position, color, 0.25 * scale, 2.2 * scale, 0.38, 0.82);
   }
 
   muzzle(position: THREE.Vector3, color: number): void {
@@ -55,6 +67,70 @@ export class Effects {
   castPulse(position: THREE.Vector3, color: number): void {
     this.flash(position, color, 0.6, 2.8, 0.3);
     this.burst(position, color, 12, 1.6, 0.32);
+    this.ring(position, color, 0.4, 2.8, 0.42, 0.9);
+  }
+
+  ring(
+    position: THREE.Vector3,
+    color: number,
+    startRadius: number,
+    endRadius: number,
+    life: number,
+    opacity = 0.8,
+  ): void {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.82, 1, 48),
+      material,
+    );
+    mesh.rotation.x = -Math.PI * 0.5;
+    mesh.position.copy(position);
+    mesh.scale.setScalar(startRadius);
+    mesh.renderOrder = 22;
+    this.scene.add(mesh);
+    this.rings.push({
+      mesh,
+      age: 0,
+      life,
+      startScale: startRadius,
+      endScale: endRadius,
+      baseOpacity: opacity,
+      material,
+    });
+  }
+
+  rune(position: THREE.Vector3, color: number, radius: number, life = 1.8): void {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.72, 1, 6), material);
+    mesh.rotation.x = -Math.PI * 0.5;
+    mesh.rotation.z = Math.PI / 6;
+    mesh.position.copy(position);
+    mesh.scale.setScalar(radius);
+    mesh.renderOrder = 22;
+    this.scene.add(mesh);
+    this.rings.push({
+      mesh,
+      age: 0,
+      life,
+      startScale: radius,
+      endScale: radius * 1.08,
+      baseOpacity: 0.65,
+      material,
+    });
   }
 
   update(dt: number): void {
@@ -82,6 +158,27 @@ export class Effects {
         burst.points.geometry.dispose();
         burst.material.dispose();
         this.bursts.splice(i, 1);
+      }
+    }
+
+    for (let i = this.rings.length - 1; i >= 0; i -= 1) {
+      const ring = this.rings[i];
+      ring.age += dt;
+      const progress = Math.min(1, ring.age / ring.life);
+      const scale = THREE.MathUtils.lerp(
+        ring.startScale,
+        ring.endScale,
+        easeOutCubic(progress),
+      );
+      ring.mesh.scale.setScalar(scale);
+      ring.material.opacity = Math.max(0, ring.baseOpacity * (1 - progress));
+      ring.mesh.rotation.z += dt * 0.8;
+
+      if (ring.age >= ring.life) {
+        this.scene.remove(ring.mesh);
+        ring.mesh.geometry.dispose();
+        ring.material.dispose();
+        this.rings.splice(i, 1);
       }
     }
 
