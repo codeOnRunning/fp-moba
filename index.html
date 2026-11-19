@@ -27,6 +27,9 @@
         <div id="match-timer" class="timer">00:00</div>
         <div id="perf" class="perf">FPS -- · DRAW --</div>
       </header>
+      <div class="minimap-wrap">
+        <canvas id="minimap" width="160" height="120"></canvas>
+      </div>
 
       <div id="boss-intro" class="boss-intro hidden">
         <div class="boss-intro-eyebrow">BOSS ENCOUNTER</div>
@@ -93,33 +96,56 @@
         <section id="abilities" class="panel abilities">
           <div class="ability basic" id="ability-basic">
             <span class="key">LMB</span>
-            <div class="ability-glyph">✧</div>
+            <div class="ability-glyph">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" fill="currentColor" />
+              </svg>
+            </div>
             <span class="ability-name">奥术弹</span>
           </div>
           <div class="ability" id="ability-q">
             <span class="key">Q</span>
-            <div class="ability-glyph">➤</div>
+            <div class="ability-glyph">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 20L20 4M13 4h7v7M4 8l5 1M8 4l1 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              </svg>
+            </div>
             <div id="q-cooldown-mask" class="cooldown-mask"></div>
             <span id="q-cooldown-text" class="cooldown-text"></span>
             <span class="ability-name">秘法飞弹</span>
           </div>
           <div class="ability" id="ability-w">
             <span class="key">F</span>
-            <div class="ability-glyph">◎</div>
+            <div class="ability-glyph">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+                <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+              </svg>
+            </div>
             <div id="w-cooldown-mask" class="cooldown-mask"></div>
             <span id="w-cooldown-text" class="cooldown-text"></span>
             <span class="ability-name">引力法阵</span>
           </div>
           <div class="ability" id="ability-e">
             <span class="key">E</span>
-            <div class="ability-glyph">⇢</div>
+            <div class="ability-glyph">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h11l-3-3M20 17H9l3 3M13 12h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
             <div id="e-cooldown-mask" class="cooldown-mask"></div>
             <span id="e-cooldown-text" class="cooldown-text"></span>
             <span class="ability-name">折跃</span>
           </div>
           <div class="ability" id="ability-r">
             <span class="key">R</span>
-            <div class="ability-glyph">☄</div>
+            <div class="ability-glyph">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2v20M6 7l6-5 6 5M6 17l6 5 6-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </div>
             <div id="r-cooldown-mask" class="cooldown-mask"></div>
             <span id="r-cooldown-text" class="cooldown-text"></span>
             <span class="ability-name">天穹裂隙</span>
@@ -190,6 +216,7 @@
           <div class="eyebrow">SIMULATION PAUSED</div>
           <h2>已暂停</h2>
           <p class="lead">鼠标已释放。点击继续，重新锁定视角。</p>
+          <p id="pause-stats" class="combat-stats"></p>
           <button id="resume-button" class="primary-button" type="button">
             点击继续
           </button>
@@ -268,6 +295,7 @@
           <div class="eyebrow">BOSS CLEARED</div>
           <h2 id="victory-title">星蚀守卫已倒下</h2>
           <p id="victory-summary" class="lead">用时 00:00 · 剩余生命 100</p>
+          <p id="victory-stats" class="combat-stats"></p>
           <p id="victory-build" class="victory-build"></p>
           <p id="victory-score" class="victory-score"></p>
           <p id="victory-best" class="fine-print">本地最快 00:00</p>
@@ -320,6 +348,78 @@
               <span>屏幕震动 <b id="settings-shake-value">0%</b></span>
               <input id="settings-shake" type="range" min="0" max="100" step="5" />
               <small>受击时的镜头抖动</small>
+            </label>
+
+            <label class="setting-row">
+              <span>主音量 <b id="settings-master-volume-value">70%</b></span>
+              <input id="settings-master-volume" type="range" min="0" max="100" step="5" />
+              <small>总音量</small>
+            </label>
+
+            <label class="setting-row">
+              <span>音效音量 <b id="settings-sfx-volume-value">70%</b></span>
+              <input id="settings-sfx-volume" type="range" min="0" max="100" step="5" />
+              <small>技能、命中、受击</small>
+            </label>
+
+            <label class="setting-row">
+              <span>音乐音量 <b id="settings-music-volume-value">50%</b></span>
+              <input id="settings-music-volume" type="range" min="0" max="100" step="5" />
+              <small>Boss 战环境音乐</small>
+            </label>
+
+            <label class="setting-row">
+              <span>Q 技能键</span>
+              <select id="settings-key-q">
+                <option value="KeyQ">Q</option>
+                <option value="KeyF">F</option>
+                <option value="KeyE">E</option>
+                <option value="KeyR">R</option>
+              </select>
+              <small>默认 Q</small>
+            </label>
+
+            <label class="setting-row">
+              <span>F 技能键</span>
+              <select id="settings-key-f">
+                <option value="KeyF">F</option>
+                <option value="KeyQ">Q</option>
+                <option value="KeyE">E</option>
+                <option value="KeyR">R</option>
+              </select>
+              <small>默认 F</small>
+            </label>
+
+            <label class="setting-row">
+              <span>E 技能键</span>
+              <select id="settings-key-e">
+                <option value="KeyE">E</option>
+                <option value="KeyQ">Q</option>
+                <option value="KeyF">F</option>
+                <option value="KeyR">R</option>
+              </select>
+              <small>默认 E</small>
+            </label>
+
+            <label class="setting-row">
+              <span>R 技能键</span>
+              <select id="settings-key-r">
+                <option value="KeyR">R</option>
+                <option value="KeyQ">Q</option>
+                <option value="KeyF">F</option>
+                <option value="KeyE">E</option>
+              </select>
+              <small>默认 R</small>
+            </label>
+
+            <label class="setting-row">
+              <span>跳跃键</span>
+              <select id="settings-key-jump">
+                <option value="Space">Space</option>
+                <option value="KeyC">C</option>
+                <option value="KeyV">V</option>
+              </select>
+              <small>默认 Space</small>
             </label>
 
             <label class="setting-row">

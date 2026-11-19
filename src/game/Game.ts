@@ -125,6 +125,10 @@ export class Game {
   private playerMana = PLAYER_MAX_MANA;
   private playerLevel = 1;
   private playerXp = 0;
+  private damageDealt = 0;
+  private damageTaken = 0;
+  private hitCount = 0;
+  private hitStopRemaining = 0;
   private bestTime: number | null = readBestTime();
   private bestScore: number | null = readBestScore();
   private difficulty: Difficulty = readDifficulty();
@@ -625,6 +629,7 @@ export class Game {
     this.hud.hideStart();
     this.hud.hidePause();
     this.audio.resume();
+    this.audio.startMusic(1);
     this.hud.showToast('舒适模式：第三人称 · FOV 70 · 无武器晃动 · V 切换第一人称', 3200);
     this.beginBossIntro();
     this.lastTime = performance.now();
@@ -645,6 +650,7 @@ export class Game {
     this.hud.hideHelp();
     this.hud.hidePause();
     this.audio.resume();
+    this.audio.startMusic(this.dummy.phase);
     this.running = true;
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -744,6 +750,11 @@ export class Game {
     const next = sanitize(settings);
     Object.assign(this.settings, next);
 
+    this.audio.setVolumes(
+      next.masterVolume,
+      next.sfxVolume,
+      next.musicVolume,
+    );
     this.camera.fov = next.fov;
     this.camera.updateProjectionMatrix();
     this.cameraMode = next.cameraMode;
@@ -826,20 +837,29 @@ export class Game {
     this.lastTime = now;
 
     if (this.running && !this.playerDead) {
-      this.accumulator += frameDelta;
-      let steps = 0;
-      while (this.accumulator >= FIXED_DT && steps < MAX_STEPS) {
-        this.fixedUpdate(FIXED_DT);
-        this.accumulator -= FIXED_DT;
-        steps += 1;
-      }
-      if (steps === MAX_STEPS) {
-        this.accumulator = 0;
-      }
+      if (this.hitStopRemaining > 0) {
+        this.hitStopRemaining = Math.max(
+          0,
+          this.hitStopRemaining - frameDelta,
+        );
+        this.updateCamera(frameDelta);
+        this.updateHud();
+      } else {
+        this.accumulator += frameDelta;
+        let steps = 0;
+        while (this.accumulator >= FIXED_DT && steps < MAX_STEPS) {
+          this.fixedUpdate(FIXED_DT);
+          this.accumulator -= FIXED_DT;
+          steps += 1;
+        }
+        if (steps === MAX_STEPS) {
+          this.accumulator = 0;
+        }
 
-      this.updateCamera(frameDelta);
-      this.updateViewmodel(frameDelta);
-      this.updateHud();
+        this.updateCamera(frameDelta);
+        this.updateViewmodel(frameDelta);
+        this.updateHud();
+      }
     } else if (this.playerDead) {
       this.deathRemaining = Math.max(0, this.deathRemaining - frameDelta);
       this.hud.setDeathCountdown(this.deathRemaining);
@@ -878,7 +898,7 @@ export class Game {
     if (this.input.consumePressed('KeyV')) {
       this.toggleCamera();
     }
-    if (this.input.consumePressed('Space') && this.player.jump()) {
+    if (this.input.consumePressed(this.settings.keyJump) && this.player.jump()) {
       this.effects.castPulse(
         this.player.position.clone().add(new THREE.Vector3(0, 0.3, 0)),
         0x9fe8ff,
@@ -886,8 +906,8 @@ export class Game {
     }
 
     // Q is charge-on-hold, cast-on-release. The pressed edge also catches a quick tap.
-    const qPressed = this.input.consumePressed('KeyQ');
-    const qDown = this.input.isDown('KeyQ');
+    const qPressed = this.input.consumePressed(this.settings.keyQ);
+    const qDown = this.input.isDown(this.settings.keyQ);
     if (
       (qPressed || qDown) &&
       !this.qHeld &&
@@ -907,8 +927,8 @@ export class Game {
     }
 
     // F is hold-to-aim, release-to-cast. W is movement, so the ability lives on F.
-    const fPressed = this.input.consumePressed('KeyF');
-    const fDown = this.input.isDown('KeyF');
+    const fPressed = this.input.consumePressed(this.settings.keyF);
+    const fDown = this.input.isDown(this.settings.keyF);
     if (fPressed && !this.wAiming) {
       if (this.wCooldown > 0) {
         this.hud.showToast(`引力法阵冷却中 ${this.wCooldown.toFixed(1)}s`, 650);
@@ -935,8 +955,8 @@ export class Game {
       }
     }
 
-    if (this.input.consumePressed('KeyE')) this.castE();
-    if (this.input.consumePressed('KeyR')) this.castR();
+    if (this.input.consumePressed(this.settings.keyE)) this.castE();
+    if (this.input.consumePressed(this.settings.keyR)) this.castR();
 
     if (this.input.isFireHeld) {
       this.tryBasicAttack();
@@ -1193,6 +1213,12 @@ export class Game {
       this.dummy.maxHealth,
       `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.difficultyConfig.shortLabel} · ${this.dummy.phaseLabel}`,
       this.bossDisplayName,
+    );
+    this.hud.updateMinimap(
+      this.player.position,
+      this.dummy.position,
+      this.dummy.alive,
+      this.bossAdds.map(({ add }) => add.position),
     );
     this.hud.setCrosshairTargeting(
       this.dummy.alive && distance < 36 && alignment > 0.94,
@@ -1501,6 +1527,13 @@ export class Game {
       this.markTimer = 6;
     }
 
+    this.damageDealt += finalDamage;
+    this.hitCount += 1;
+    this.hitStopRemaining = Math.max(
+      this.hitStopRemaining,
+      finalDamage >= 50 ? 0.045 : 0.02,
+    );
+    this.hud.setCombatStats(this.damageDealt, this.damageTaken, this.hitCount);
     const died = this.dummy.takeDamage(finalDamage);
     if (!died) {
       this.enemyView.play('Hit_A', 0.06, true);
@@ -1589,6 +1622,8 @@ export class Game {
     if (this.playerDead || this.invulnerableTime > 0) return;
 
     this.playerHealth = Math.max(0, this.playerHealth - damage);
+    this.damageTaken += damage;
+    this.hud.setCombatStats(this.damageDealt, this.damageTaken, this.hitCount);
     this.hud.setHealth(this.playerHealth, this.maxHealth);
     this.hud.hitMarker();
     this.hud.showDamage(point, this.camera, damage, 'player');
@@ -1706,6 +1741,7 @@ export class Game {
           ? '星环崩解'
           : '星环解放',
     );
+    this.audio.setMusicPhase(2);
     this.hud.showToast(
       `${this.bossDisplayName} · ${this.dummy.phaseLabel}`,
       1600,
@@ -1933,6 +1969,7 @@ export class Game {
     this.bossDefeated = true;
     this.running = false;
     this.hud.hideBossIntro();
+    this.audio.stopMusic();
     this.qHeld = false;
     this.qCharge = 0;
     this.cancelWAim();
@@ -2042,6 +2079,7 @@ export class Game {
       1800,
     );
     this.beginBossIntro(1.1);
+    this.audio.startMusic(1);
     this.running = true;
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -2059,6 +2097,7 @@ export class Game {
     this.clearBossAdds();
     this.clearBossMechanics();
     this.hud.hideBossIntro();
+    this.audio.stopMusic();
     this.qHeld = false;
     this.qCharge = 0;
     this.cancelWAim();
@@ -2087,6 +2126,10 @@ export class Game {
     this.rollBossModifier();
     this.playerLevel = 1;
     this.playerXp = 0;
+    this.damageDealt = 0;
+    this.damageTaken = 0;
+    this.hitCount = 0;
+    this.hitStopRemaining = 0;
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
     this.applyBossModifiers();
@@ -2096,6 +2139,7 @@ export class Game {
     this.hud.hideUpgrades();
     this.resetEncounter();
     this.hud.setLevel(1);
+    this.hud.setCombatStats(0, 0, 0);
   }
 
   private resetEncounter(): void {
@@ -2137,6 +2181,7 @@ export class Game {
     this.hud.hideDeath();
     this.hud.hideVictory();
     this.beginBossIntro(1.1);
+    this.audio.startMusic(1);
     this.running = true;
     this.lastTime = performance.now();
     this.accumulator = 0;

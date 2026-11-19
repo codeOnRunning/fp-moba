@@ -10,6 +10,14 @@ export interface ComfortSettings {
   quality: QualityLevel;
   hideWeapon: boolean;
   invertY: boolean;
+  masterVolume: number;
+  sfxVolume: number;
+  musicVolume: number;
+  keyQ: string;
+  keyF: string;
+  keyE: string;
+  keyR: string;
+  keyJump: string;
 }
 
 export const DEFAULT_SETTINGS: ComfortSettings = {
@@ -21,6 +29,14 @@ export const DEFAULT_SETTINGS: ComfortSettings = {
   quality: 'medium',
   hideWeapon: false,
   invertY: false,
+  masterVolume: 70,
+  sfxVolume: 70,
+  musicVolume: 50,
+  keyQ: 'KeyQ',
+  keyF: 'KeyF',
+  keyE: 'KeyE',
+  keyR: 'KeyR',
+  keyJump: 'Space',
 };
 
 const STORAGE_KEY = 'fp-moba.comfort-settings.v1';
@@ -57,10 +73,29 @@ export function sanitize(settings: ComfortSettings): ComfortSettings {
         : 'medium',
     hideWeapon: Boolean(settings.hideWeapon),
     invertY: Boolean(settings.invertY),
+    masterVolume: sanitizeVolume(settings.masterVolume, DEFAULT_SETTINGS.masterVolume),
+    sfxVolume: sanitizeVolume(settings.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
+    musicVolume: sanitizeVolume(settings.musicVolume, DEFAULT_SETTINGS.musicVolume),
+    keyQ: sanitizeKey(settings.keyQ, 'KeyQ'),
+    keyF: sanitizeKey(settings.keyF, 'KeyF'),
+    keyE: sanitizeKey(settings.keyE, 'KeyE'),
+    keyR: sanitizeKey(settings.keyR, 'KeyR'),
+    keyJump: sanitizeKey(settings.keyJump, 'Space'),
   };
 }
 
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeVolume(value: number, fallback: number): number {
+  return Number.isFinite(value) ? clamp(value, 0, 100) : fallback;
+}
+
+function sanitizeKey(value: string, fallback: string): string {
+  if (value === 'Space') return value;
+  if (/^Key[A-Z]$/.test(value)) return value;
+  if (/^Arrow(Up|Down|Left|Right)$/.test(value)) return value;
+  return fallback;
 }

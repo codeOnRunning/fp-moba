@@ -25,6 +25,17 @@ export class SettingsPanel {
   private readonly quality = element<HTMLSelectElement>('settings-quality');
   private readonly hideWeapon = element<HTMLInputElement>('settings-hide-weapon');
   private readonly invertY = element<HTMLInputElement>('settings-invert-y');
+  private readonly masterVolume = element<HTMLInputElement>('settings-master-volume');
+  private readonly masterVolumeValue = element<HTMLSpanElement>('settings-master-volume-value');
+  private readonly sfxVolume = element<HTMLInputElement>('settings-sfx-volume');
+  private readonly sfxVolumeValue = element<HTMLSpanElement>('settings-sfx-volume-value');
+  private readonly musicVolume = element<HTMLInputElement>('settings-music-volume');
+  private readonly musicVolumeValue = element<HTMLSpanElement>('settings-music-volume-value');
+  private readonly keyQ = element<HTMLSelectElement>('settings-key-q');
+  private readonly keyF = element<HTMLSelectElement>('settings-key-f');
+  private readonly keyE = element<HTMLSelectElement>('settings-key-e');
+  private readonly keyR = element<HTMLSelectElement>('settings-key-r');
+  private readonly keyJump = element<HTMLSelectElement>('settings-key-jump');
   private readonly closeButton = element<HTMLButtonElement>('settings-close');
   private readonly resetButton = element<HTMLButtonElement>('settings-reset');
 
@@ -60,6 +71,30 @@ export class SettingsPanel {
     });
     this.invertY.addEventListener('change', () => {
       this.update({ invertY: this.invertY.checked });
+    });
+    this.masterVolume.addEventListener('input', () => {
+      this.update({ masterVolume: Number(this.masterVolume.value) });
+    });
+    this.sfxVolume.addEventListener('input', () => {
+      this.update({ sfxVolume: Number(this.sfxVolume.value) });
+    });
+    this.musicVolume.addEventListener('input', () => {
+      this.update({ musicVolume: Number(this.musicVolume.value) });
+    });
+    this.keyQ.addEventListener('change', () => {
+      this.update({ keyQ: this.keyQ.value });
+    });
+    this.keyF.addEventListener('change', () => {
+      this.update({ keyF: this.keyF.value });
+    });
+    this.keyE.addEventListener('change', () => {
+      this.update({ keyE: this.keyE.value });
+    });
+    this.keyR.addEventListener('change', () => {
+      this.update({ keyR: this.keyR.value });
+    });
+    this.keyJump.addEventListener('change', () => {
+      this.update({ keyJump: this.keyJump.value });
     });
 
     this.resetButton.addEventListener('click', () => {
@@ -106,5 +141,16 @@ export class SettingsPanel {
     this.quality.value = this.settings.quality;
     this.hideWeapon.checked = this.settings.hideWeapon;
     this.invertY.checked = this.settings.invertY;
+    this.masterVolume.value = String(this.settings.masterVolume);
+    this.masterVolumeValue.textContent = `${Math.round(this.settings.masterVolume)}%`;
+    this.sfxVolume.value = String(this.settings.sfxVolume);
+    this.sfxVolumeValue.textContent = `${Math.round(this.settings.sfxVolume)}%`;
+    this.musicVolume.value = String(this.settings.musicVolume);
+    this.musicVolumeValue.textContent = `${Math.round(this.settings.musicVolume)}%`;
+    this.keyQ.value = this.settings.keyQ;
+    this.keyF.value = this.settings.keyF;
+    this.keyE.value = this.settings.keyE;
+    this.keyR.value = this.settings.keyR;
+    this.keyJump.value = this.settings.keyJump;
   }
 }

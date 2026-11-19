@@ -81,6 +81,9 @@ export class Hud {
   private readonly startScreen = element<HTMLDivElement>('start-screen');
   private readonly startButton = element<HTMLButtonElement>('start-button');
   private readonly pauseScreen = element<HTMLDivElement>('pause-screen');
+  private readonly pauseStats = element<HTMLParagraphElement>('pause-stats');
+  private readonly victoryStats = element<HTMLParagraphElement>('victory-stats');
+  private readonly minimap = element<HTMLCanvasElement>('minimap');
   private readonly deathScreen = element<HTMLDivElement>('death-screen');
   private readonly deathCountdown = element<HTMLParagraphElement>('death-countdown');
   private readonly respawnButton = element<HTMLButtonElement>('respawn-button');
@@ -358,6 +361,58 @@ export class Hud {
 
   setLowHealth(low: boolean): void {
     document.body.classList.toggle('low-health', low);
+  }
+
+  setCombatStats(dealt: number, taken: number, hits: number): void {
+    const text =
+      `造成伤害 ${Math.round(dealt)} · 承受伤害 ${Math.round(taken)} · 命中 ${hits}`;
+    this.pauseStats.textContent = text;
+    this.victoryStats.textContent = text;
+  }
+
+  updateMinimap(
+    player: THREE.Vector3,
+    boss: THREE.Vector3,
+    bossAlive: boolean,
+    adds: THREE.Vector3[] = [],
+  ): void {
+    const context = this.minimap.getContext('2d');
+    if (!context) return;
+    const width = this.minimap.width;
+    const height = this.minimap.height;
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = 'rgba(3, 9, 18, 0.72)';
+    context.fillRect(0, 0, width, height);
+    context.strokeStyle = 'rgba(87, 224, 240, 0.13)';
+    context.lineWidth = 1;
+    for (let x = 10; x < width; x += 20) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, height);
+      context.stroke();
+    }
+    for (let y = 10; y < height; y += 20) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(width, y);
+      context.stroke();
+    }
+
+    const map = (point: THREE.Vector3) => ({
+      x: 6 + ((point.x + 27) / 45) * (width - 12),
+      y: 6 + ((point.z + 12) / 24) * (height - 12),
+    });
+    const drawDot = (point: THREE.Vector3, color: string, radius: number) => {
+      const p = map(point);
+      context.beginPath();
+      context.fillStyle = color;
+      context.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      context.fill();
+    };
+
+    if (bossAlive) drawDot(boss, '#ff5c7a', 5);
+    for (const add of adds) drawDot(add, '#b14cff', 3);
+    drawDot(player, '#57e0f0', 4);
   }
 
   setStartReady(): void {

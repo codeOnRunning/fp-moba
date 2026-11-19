@@ -1,8 +1,20 @@
-# Boss Rush v0.5.0a 开发状态
+# Boss Rush v0.6.0a 开发状态
 
 日期：2026-11-19  
 路线：Boss Rush / Roguelike  
-当前版本：**v0.5.0a · 三 Boss + 难度/词缀 + Build 评分**
+当前版本：**v0.6.0a · 三 Boss + UI/音频 + Build 评分**
+
+## P4 完成内容
+
+- LMB/Q/F/E/R 五个 SVG 技能图标
+- 程序化 Boss 环境音乐 + 阶段 2 变调
+- 主音量 / 音效 / 音乐音量设置
+- Q/F/E/R + 跳跃键位重绑定
+- 命中停顿（45ms / 20ms）
+- 战斗统计：造成伤害 / 承受伤害 / 命中
+- 右上角小地图：玩家/Boss/召唤物
+- 真实 GPU：60 FPS / 180 draw calls / 207k tris
+- 详见 `docs/P4-验收记录.md`
 
 ## P3 完成内容
 
@@ -165,6 +177,8 @@
 - 星环巨像阶段 2：激光 + 引力，真实 GPU 60 FPS / 178 draw calls / 206k tris
 - P3 难度/词缀/Build 评分：困难 + 随机词缀 + Build 摘要 + 本地最高分
 - P3 真实 GPU：60 FPS / 136 draw calls / 188k tris
+- P4 UI/音频：SVG 图标、音量、键位重绑定、命中停顿、战斗统计、小地图
+- P4 真实 GPU：60 FPS / 180 draw calls / 207k tris
 
 ## 已知问题 / 下一轮
 
@@ -175,10 +189,11 @@
 5. 追踪法球不可被击落。
 6. 星环巨像模型复用骷髅骨架放大 + 金色换色。
 7. 难度/词缀/评分公式需要真人试玩调参。
-8. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
+8. 音乐为程序化环境音，按键重绑定只覆盖 Q/F/E/R/跳跃。
+9. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
 
 ## 下一步
 
-1. 真人试玩三 Boss + 难度/词缀，确认难度曲线。
-2. P4：技能图标、音乐/音效、命中停顿、VFX、音量、按键重绑定、战斗统计。
-3. P5：性能、QA、公开试玩。
+1. 真人试玩三 Boss + 难度/词缀 + 新 HUD，确认体验。
+2. P5：代码拆分、资源压缩、浏览器回归、30 分钟稳定性、GitHub Pages、LICENSE。
+3. P6：小兵/防御塔/商店/敌方英雄 AI。
