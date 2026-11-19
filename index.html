@@ -153,8 +153,17 @@
             </div>
           </div>
           <p class="lead">
-            走进星辉峡谷，用奥术飞弹击碎星蚀守卫。先验证第一人称下的移动、瞄准与施法手感。
+            走进星辉峡谷，依次击败星蚀守卫、虚空术士与星环巨像。
           </p>
+          <div class="difficulty-row">
+            <label for="difficulty-select">难度</label>
+            <select id="difficulty-select">
+              <option value="easy">简单 · 伤害 -25%</option>
+              <option value="normal" selected>普通 · 标准</option>
+              <option value="hard">困难 · 伤害 +25%</option>
+            </select>
+            <span id="boss-modifier-label">本局词缀：无词缀</span>
+          </div>
           <div class="control-grid">
             <div><kbd>WASD</kbd><span>移动</span></div>
             <div><kbd>鼠标</kbd><span>视角</span></div>
@@ -259,6 +268,8 @@
           <div class="eyebrow">BOSS CLEARED</div>
           <h2 id="victory-title">星蚀守卫已倒下</h2>
           <p id="victory-summary" class="lead">用时 00:00 · 剩余生命 100</p>
+          <p id="victory-build" class="victory-build"></p>
+          <p id="victory-score" class="victory-score"></p>
           <p id="victory-best" class="fine-print">本地最快 00:00</p>
           <button id="victory-retry-button" class="primary-button" type="button">
             再战一次

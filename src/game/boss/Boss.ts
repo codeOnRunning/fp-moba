@@ -37,6 +37,7 @@ export class Boss {
 
   private readonly home: THREE.Vector3;
   private attackCooldown = 2.2;
+  private attackCooldownScale = 1;
   private hitFlash = 0;
   private deathCount = 0;
   private phaseAnnounced = false;
@@ -95,6 +96,10 @@ export class Boss {
     return this.variant === 'void';
   }
 
+  setAttackCooldownScale(scale: number): void {
+    this.attackCooldownScale = Math.max(0.5, Math.min(2, scale));
+  }
+
   update(dt: number, playerPosition: THREE.Vector3): void {
     if (!this.alive) return;
 
@@ -123,7 +128,8 @@ export class Boss {
     const distance = Math.hypot(playerPosition.x - nextX, playerPosition.z - this.home.z);
     if (this.attackCooldown > 0) return;
 
-    this.attackCooldown = this.phase === 1 ? 2.8 : 2.0;
+    this.attackCooldown =
+      (this.phase === 1 ? 2.8 : 2.0) * this.attackCooldownScale;
 
     if (distance < 7.5 && Math.random() < 0.65) {
       this.callbacks.onAttack({
@@ -177,7 +183,8 @@ export class Boss {
 
     this.attackCooldown -= dt;
     if (this.attackCooldown > 0) return;
-    this.attackCooldown = this.phase === 1 ? 3.0 : 2.2;
+    this.attackCooldown =
+      (this.phase === 1 ? 3.0 : 2.2) * this.attackCooldownScale;
     this.colossusAttackCount += 1;
 
     if (
@@ -226,7 +233,8 @@ export class Boss {
 
     this.attackCooldown -= dt;
     if (this.attackCooldown > 0) return;
-    this.attackCooldown = this.phase === 1 ? 2.6 : 2.0;
+    this.attackCooldown =
+      (this.phase === 1 ? 2.6 : 2.0) * this.attackCooldownScale;
     this.voidAttackCount += 1;
 
     const origin = new THREE.Vector3(
@@ -272,7 +280,10 @@ export class Boss {
     if (!this.phaseAnnounced && this.health <= this.maxHealth * 0.5) {
       this.phaseAnnounced = true;
       this.phase = 2;
-      this.attackCooldown = Math.min(this.attackCooldown, 1.2);
+      this.attackCooldown = Math.min(
+        this.attackCooldown,
+        1.2 * this.attackCooldownScale,
+      );
       this.callbacks.onPhaseTwo();
       this.callbacks.onSummon();
     }
@@ -298,7 +309,7 @@ export class Boss {
     this.alive = true;
     this.phase = 1;
     this.phaseAnnounced = false;
-    this.attackCooldown = 2.2;
+    this.attackCooldown = 2.2 * this.attackCooldownScale;
     this.voidTeleportCooldown = 3.8;
     this.voidAttackCount = 0;
     this.colossusAttackCount = 0;

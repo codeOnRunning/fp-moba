@@ -34,9 +34,21 @@ import { AimPreview } from './abilities/AimPreview';
 import { RiftBeam } from './abilities/RiftBeam';
 import {
   pickUpgrades,
+  UPGRADE_POOL,
   type UpgradeDefinition,
   type UpgradeId,
 } from './UpgradeSystem';
+import {
+  BOSS_MODIFIERS,
+  DIFFICULTY_CONFIG,
+  pickBossModifier,
+  readBestScore,
+  readDifficulty,
+  saveBestScore,
+  saveDifficulty,
+  type BossModifier,
+  type Difficulty,
+} from './RunModifiers';
 
 const FIXED_DT = 1 / 60;
 const MAX_STEPS = 5;
@@ -114,6 +126,9 @@ export class Game {
   private playerLevel = 1;
   private playerXp = 0;
   private bestTime: number | null = readBestTime();
+  private bestScore: number | null = readBestScore();
+  private difficulty: Difficulty = readDifficulty();
+  private bossModifier: BossModifier = pickBossModifier();
   private runRound = 1;
   private readonly upgrades = new Map<UpgradeId, number>();
   private runFinished = false;
@@ -195,7 +210,17 @@ export class Game {
   }
 
   private get wRadius(): number {
-    return 5.2 * (1 + (this.upgrades.get('wRadius') ?? 0) * 0.25);
+    const synergy =
+      this.upgrades.has('wRadius') && this.upgrades.has('voidRadius') ? 1.1 : 1;
+    return (
+      5.2 *
+      (1 + (this.upgrades.get('wRadius') ?? 0) * 0.25) *
+      synergy
+    );
+  }
+
+  private get qMarkSynergy(): boolean {
+    return this.upgrades.has('qCharge') && this.upgrades.has('markDamage');
   }
 
   private get eCooldownMultiplier(): number {
@@ -230,8 +255,61 @@ export class Game {
     return BOSS_CONFIG[this.currentBossKind].health;
   }
 
+  private get difficultyConfig() {
+    return DIFFICULTY_CONFIG[this.difficulty];
+  }
+
+  private get modifierDefinition() {
+    return BOSS_MODIFIERS[this.bossModifier];
+  }
+
+  private get bossDamageTakenMultiplier(): number {
+    return this.bossModifier === 'shield' ? 0.85 : 1;
+  }
+
+  private get bossAttackCooldownScale(): number {
+    return (
+      this.difficultyConfig.attackCooldownScale *
+      (this.bossModifier === 'berserk' ? 0.85 : 1)
+    );
+  }
+
+  private get buildSummary(): string[] {
+    const summary: string[] = [];
+    for (const [id, count] of this.upgrades) {
+      const definition = UPGRADE_POOL.find((upgrade) => upgrade.id === id);
+      if (definition) {
+        summary.push(count > 1 ? `${definition.name} ×${count}` : definition.name);
+      }
+    }
+    if (this.qMarkSynergy) summary.push('联动：星辉连锁');
+    if (this.upgrades.has('wRadius') && this.upgrades.has('voidRadius')) {
+      summary.push('联动：奇点扩张');
+    }
+    return summary;
+  }
+
+  private computeScore(): number {
+    const timeScore = Math.max(0, 18000 - this.elapsed * 40);
+    const healthScore = Math.round(this.playerHealth * 15);
+    const levelScore = this.playerLevel * 120;
+    const modifierBonus = this.bossModifier === 'none' ? 0 : 1500;
+    return Math.round(
+      5000 +
+        timeScore +
+        healthScore +
+        levelScore +
+        this.difficultyConfig.scoreBonus +
+        modifierBonus,
+    );
+  }
+
   private get bossRoundDamage(): number {
-    return 1 + (this.runRound - 1) * BOSS_DAMAGE_GROWTH;
+    return (
+      (1 + (this.runRound - 1) * BOSS_DAMAGE_GROWTH) *
+      this.difficultyConfig.bossDamageScale *
+      (this.bossModifier === 'berserk' ? 1.15 : 1)
+    );
   }
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -287,6 +365,7 @@ export class Game {
     });
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.applyBossModifiers();
     this.dummy.setPrimitiveVisible(false);
     this.enemyView = this.createEnemyView(this.currentBossKind);
     this.enemyView.setPosition(
@@ -374,6 +453,10 @@ export class Game {
         runRound: this.runRound,
         bossKind: this.currentBossKind,
         bossName: this.bossDisplayName,
+        difficulty: this.difficulty,
+        bossModifier: this.bossModifier,
+        build: this.buildSummary,
+        score: this.computeScore(),
         upgrades: Object.fromEntries(this.upgrades),
         bossIntroRemaining: this.bossIntroRemaining,
         bossTransitionRemaining: this.bossTransitionRemaining,
@@ -507,6 +590,22 @@ export class Game {
     document.getElementById('start-help-button')?.addEventListener('click', () => {
       this.openHelp();
     });
+    const difficultySelect = document.getElementById(
+      'difficulty-select',
+    ) as HTMLSelectElement | null;
+    if (difficultySelect) {
+      difficultySelect.value = this.difficulty;
+      difficultySelect.addEventListener('change', () => {
+        const value = difficultySelect.value;
+        if (value === 'easy' || value === 'normal' || value === 'hard') {
+          this.difficulty = value;
+          saveDifficulty(value);
+          this.applyBossModifiers();
+          this.updateStartMeta();
+        }
+      });
+    }
+    this.updateStartMeta();
     document.getElementById('pause-help-button')?.addEventListener('click', () => {
       this.openHelp();
     });
@@ -562,13 +661,17 @@ export class Game {
     this.wPreview?.setVisible(false);
   }
 
+  private applyBossModifiers(): void {
+    this.dummy.setAttackCooldownScale(this.bossAttackCooldownScale);
+  }
+
   private beginBossIntro(duration = 1.5): void {
     this.bossIntroRemaining = duration;
     this.bossTransitionRemaining = 0;
     this.bossInvulnerableTime = duration;
     this.hud.showBossIntro(
       this.bossDisplayName,
-      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.difficultyConfig.shortLabel} · ${this.dummy.phaseLabel}`,
     );
   }
 
@@ -599,6 +702,20 @@ export class Game {
     } else if (!this.playerDead) {
       this.hud.showPause();
     }
+  }
+
+  private updateStartMeta(): void {
+    const label = document.getElementById('boss-modifier-label');
+    if (label) {
+      label.textContent =
+        `本局词缀：${this.modifierDefinition.label} · ` +
+        this.modifierDefinition.description;
+    }
+  }
+
+  private rollBossModifier(): void {
+    this.bossModifier = pickBossModifier();
+    this.updateStartMeta();
   }
 
   private openHelp(): void {
@@ -1074,7 +1191,7 @@ export class Game {
       visible,
       this.dummy.health,
       this.dummy.maxHealth,
-      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.difficultyConfig.shortLabel} · ${this.dummy.phaseLabel}`,
       this.bossDisplayName,
     );
     this.hud.setCrosshairTargeting(
@@ -1361,11 +1478,19 @@ export class Game {
       return;
     }
 
-    let finalDamage = Math.round(damage * this.damageMultiplier);
+    let finalDamage = Math.round(
+      damage * this.damageMultiplier * this.bossDamageTakenMultiplier,
+    );
+    if (kind === 'q' && this.qMarkSynergy) {
+      finalDamage = Math.round(finalDamage * 1.15);
+    }
 
     if (kind === 'basic' && this.markStacks >= 3) {
       finalDamage += Math.round(
-        30 * this.damageMultiplier * this.markDamageMultiplier,
+        30 *
+          this.damageMultiplier *
+          this.markDamageMultiplier *
+          this.bossDamageTakenMultiplier,
       );
       this.markStacks = 0;
       this.markTimer = 0;
@@ -1525,7 +1650,7 @@ export class Game {
       new BossTelegraph(this.scene, {
         position: attack.position,
         radius: attackRadius,
-        delay: attack.delay,
+        delay: attack.delay * this.difficultyConfig.telegraphScale,
         color,
         onComplete: (center, radius) => {
           this.effects.impact(
@@ -1561,6 +1686,7 @@ export class Game {
     for (const direction of directions) {
       this.projectiles.spawn(origin, direction, 'enemy', 'dummy', {
         damage: Math.round(8 * this.bossRoundDamage),
+        speed: 13 * this.difficultyConfig.projectileSpeedScale,
       });
     }
     this.effects.muzzle(origin, 0xff5c7a);
@@ -1614,19 +1740,20 @@ export class Game {
   }
 
   private onBossSummon(): void {
+    const extra = this.bossModifier === 'split' ? 1 : 0;
     if (this.dummy.isVoid) {
       this.hud.showToast('虚空术士召唤镜像', 1100);
-      this.spawnBossAdds('mirror', 2);
+      this.spawnBossAdds('mirror', 2 + extra);
       return;
     }
     if (this.dummy.variant === 'colossus') {
       this.hud.showToast('星环巨像 · 星环崩解', 1200);
       this.onBossLaser();
-      this.onBossMeteors(this.player.position, 4);
+      this.onBossMeteors(this.player.position, 4 + extra);
       return;
     }
     this.hud.showToast('星蚀碎片被召唤', 1100);
-    this.spawnBossAdds('shard', 2);
+    this.spawnBossAdds('shard', 2 + extra);
   }
 
   private onBossTeleport(position: THREE.Vector3): void {
@@ -1650,7 +1777,7 @@ export class Game {
         damage: Math.round(
           10 * this.bossRoundDamage * this.voidHomingMultiplier,
         ),
-        speed: 8,
+        speed: 8 * this.difficultyConfig.projectileSpeedScale,
         life: 5,
         homing: 1.15,
         glowScale: 1.15,
@@ -1661,7 +1788,10 @@ export class Game {
   }
 
   private onBossMirror(): void {
-    this.spawnBossAdds('mirror', 1);
+    this.spawnBossAdds(
+      'mirror',
+      1 + (this.bossModifier === 'split' ? 1 : 0),
+    );
     this.hud.showToast('镜像分身出现', 700);
     this.effects.castPulse(
       this.dummy.position.clone().add(new THREE.Vector3(0, 1, 0)),
@@ -1704,7 +1834,9 @@ export class Game {
         new BossTelegraph(this.scene, {
           position,
           radius,
-          delay: 0.9 + index * 0.08,
+          delay:
+            (0.9 + index * 0.08) *
+            this.difficultyConfig.telegraphScale,
           color: 0xff8a3d,
           onComplete: (impact, impactRadius) => {
             this.effects.impact(
@@ -1790,6 +1922,7 @@ export class Game {
   private onDummyShoot(shot: DummyShot): void {
     this.projectiles.spawn(shot.origin, shot.direction, 'enemy', 'dummy', {
       damage: 7,
+      speed: 13 * this.difficultyConfig.projectileSpeedScale,
     });
     this.effects.muzzle(shot.origin, 0xff5c7a);
     this.audio.enemyShoot();
@@ -1845,6 +1978,11 @@ export class Game {
       this.bestTime = this.elapsed;
       saveBestTime(this.elapsed);
     }
+    const score = this.computeScore();
+    if (this.bestScore === null || score > this.bestScore) {
+      this.bestScore = score;
+      saveBestScore(score);
+    }
     this.hud.showVictory(
       this.elapsed,
       this.playerHealth,
@@ -1852,6 +1990,11 @@ export class Game {
       this.bestTime,
       isNewBest,
       this.bossDisplayName,
+      this.buildSummary,
+      score,
+      this.bestScore,
+      this.difficultyConfig.label,
+      this.modifierDefinition.label,
     );
   }
 
@@ -1862,6 +2005,7 @@ export class Game {
     this.runRound += 1;
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.applyBossModifiers();
     this.dummy.respawn();
     this.replaceEnemyView();
     this.player.teleport(this.respawnPosition);
@@ -1940,10 +2084,12 @@ export class Game {
     this.runFinished = false;
     this.upgradePending = false;
     this.upgrades.clear();
+    this.rollBossModifier();
     this.playerLevel = 1;
     this.playerXp = 0;
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.applyBossModifiers();
     this.replaceEnemyView();
     this.wPreview.setRadiusScale(1);
     this.hud.hideVictory();

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import type { UpgradeDefinition } from './UpgradeSystem';
+import {
+  RARITY_LABELS,
+  type UpgradeDefinition,
+} from './UpgradeSystem';
 
 type DamageKind = 'enemy' | 'player';
 
@@ -37,6 +40,8 @@ export class Hud {
   private readonly victoryBest = element<HTMLParagraphElement>('victory-best');
   private readonly victoryRetry = element<HTMLButtonElement>('victory-retry-button');
   private readonly victoryTitle = element<HTMLHeadingElement>('victory-title');
+  private readonly victoryBuild = element<HTMLParagraphElement>('victory-build');
+  private readonly victoryScore = element<HTMLParagraphElement>('victory-score');
   private readonly deathTitle = element<HTMLHeadingElement>('death-title');
   private readonly upgradeScreen = element<HTMLDivElement>('upgrade-screen');
   private readonly upgradeSubtitle = element<HTMLParagraphElement>('upgrade-subtitle');
@@ -202,10 +207,20 @@ export class Hud {
     best: number | null,
     newBest: boolean,
     bossName = '星蚀守卫',
+    build: string[] = [],
+    score = 0,
+    bestScore: number | null = null,
+    difficulty = '普通',
+    modifier = '无词缀',
   ): void {
     this.victoryTitle.textContent = `${bossName}已倒下`;
     this.victorySummary.textContent =
       `用时 ${formatSeconds(seconds)} · 剩余生命 ${Math.ceil(health)} · Lv.${level}`;
+    this.victoryBuild.textContent =
+      build.length > 0 ? `Build：${build.join(' · ')}` : 'Build：无强化';
+    this.victoryScore.textContent =
+      `得分 ${score} · ${difficulty} · ${modifier}` +
+      (bestScore === null ? '' : ` · 本地最高 ${bestScore}`);
     this.victoryBest.textContent =
       best === null
         ? '本地最快：暂无记录'
@@ -232,11 +247,15 @@ export class Hud {
     for (const option of options) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'upgrade-option';
+      button.className = `upgrade-option rarity-${option.rarity}`;
 
       const glyph = document.createElement('div');
       glyph.className = 'upgrade-glyph';
       glyph.textContent = option.glyph;
+
+      const rarity = document.createElement('span');
+      rarity.className = 'upgrade-rarity';
+      rarity.textContent = RARITY_LABELS[option.rarity];
 
       const name = document.createElement('strong');
       name.textContent = option.name;
@@ -244,7 +263,7 @@ export class Hud {
       const description = document.createElement('span');
       description.textContent = option.description;
 
-      button.append(glyph, name, description);
+      button.append(glyph, rarity, name, description);
       button.addEventListener('click', () => {
         this.hideUpgrades();
         onPick(option.id);
