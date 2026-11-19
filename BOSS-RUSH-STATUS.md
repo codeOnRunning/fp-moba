@@ -1,8 +1,17 @@
-# Boss Rush v0.6.0a 开发状态
+# Boss Rush v0.7.0a 开发状态
 
 日期：2026-11-19  
 路线：Boss Rush / Roguelike  
-当前版本：**v0.6.0a · 三 Boss + UI/音频 + Build 评分**
+当前版本：**v0.7.0a · 三 Boss + UI/音频 + 发布候选**
+
+## P5 完成内容
+
+- 代码拆分：入口约 101 KB / Three 675 KB / Rapier 4.33 MB
+- 1080p Chrome / Edge：60 FPS / 182 draw calls / 207k tris
+- 3 分钟生产 soak：60 FPS / 0 error
+- GitHub Pages workflow + MIT LICENSE
+- 发布版本 v0.7.0
+- 详见 `docs/P5-验收记录.md`
 
 ## P4 完成内容
 
@@ -179,6 +188,10 @@
 - P3 真实 GPU：60 FPS / 136 draw calls / 188k tris
 - P4 UI/音频：SVG 图标、音量、键位重绑定、命中停顿、战斗统计、小地图
 - P4 真实 GPU：60 FPS / 180 draw calls / 207k tris
+- P5 构建拆分：入口 101 KB / Three 675 KB / Rapier 4.33 MB
+- P5 1080p：Chrome / Edge 60 FPS / 182 draw calls / 207k tris
+- P5 3 分钟 soak：60 FPS / 0 error
+- P5 GitHub Pages workflow + MIT LICENSE + v0.7.0
 
 ## 已知问题 / 下一轮
 
@@ -190,10 +203,11 @@
 6. 星环巨像模型复用骷髅骨架放大 + 金色换色。
 7. 难度/词缀/评分公式需要真人试玩调参。
 8. 音乐为程序化环境音，按键重绑定只覆盖 Q/F/E/R/跳跃。
-9. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
+9. Rapier 4.33 MB，GLB/纹理未压缩；30 分钟 soak 和 Firefox 回归待补。
+10. Headless SwiftShader 约 10-12 FPS；真实 GPU 已测 60 FPS。
 
 ## 下一步
 
 1. 真人试玩三 Boss + 难度/词缀 + 新 HUD，确认体验。
-2. P5：代码拆分、资源压缩、浏览器回归、30 分钟稳定性、GitHub Pages、LICENSE。
+2. 补 30 分钟 soak、Firefox 回归、资源压缩。
 3. P6：小兵/防御塔/商店/敌方英雄 AI。

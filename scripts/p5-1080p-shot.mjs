@@ -1,0 +1,10 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1920,height:1080}});
+await page.goto('http://127.0.0.1:4174/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(4000);
+await page.evaluate(()=>window.__fpMoba?.faceDummy()); await page.waitForTimeout(500);
+await page.screenshot({path:'screenshots/p5-1080p.png'});
+console.log(await page.locator('#perf').textContent());
+await browser.close();

@@ -3,4 +3,5 @@ dist/
 screenshots/
 vite-*.log
 vite-*.err.log
+preview*.log
 *.tsbuildinfo
