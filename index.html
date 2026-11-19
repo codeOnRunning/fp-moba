@@ -28,6 +28,12 @@
         <div id="perf" class="perf">FPS -- · DRAW --</div>
       </header>
 
+      <div id="boss-intro" class="boss-intro hidden">
+        <div class="boss-intro-eyebrow">BOSS ENCOUNTER</div>
+        <h2 id="boss-intro-title">星蚀守卫</h2>
+        <p id="boss-intro-subtitle">轮回 1 / 3 · 第一阶段</p>
+      </div>
+
       <div id="target-panel" class="target-panel hidden">
         <div class="target-head">
           <span class="target-name">星蚀守卫</span>
@@ -48,6 +54,9 @@
       </div>
       <div id="mark-stacks" class="mark-stacks hidden" aria-hidden="true">
         <span></span><span></span><span></span>
+      </div>
+      <div id="hit-direction" class="hit-direction hidden" aria-hidden="true">
+        <span></span>
       </div>
       <div id="damage-layer" aria-hidden="true"></div>
 
@@ -160,6 +169,9 @@
           <button id="start-settings-button" class="ghost-button" type="button">
             舒适设置
           </button>
+          <button id="start-help-button" class="ghost-button" type="button">
+            技能说明
+          </button>
           <p class="fine-print">舒适优先：默认第三人称 · FOV 70 · 无武器晃动 · V 切第一人称</p>
         </div>
       </div>
@@ -175,6 +187,9 @@
           <button id="pause-settings-button" class="ghost-button" type="button">
             舒适设置
           </button>
+          <button id="pause-help-button" class="ghost-button" type="button">
+            技能说明
+          </button>
           <p class="fine-print">Esc 可再次暂停 · V 切换第一 / 第三人称</p>
         </div>
       </div>
@@ -187,6 +202,45 @@
           <button id="respawn-button" class="primary-button" type="button" disabled>
             等待复活
           </button>
+        </div>
+      </div>
+
+      <div id="help-screen" class="screen settings-screen hidden">
+        <div class="screen-card settings-card help-card">
+          <div class="eyebrow">FIELD MANUAL</div>
+          <div class="settings-heading">
+            <h2>技能说明</h2>
+            <span class="settings-badge">暂停查看</span>
+          </div>
+          <div class="help-grid">
+            <div class="help-item">
+              <b>Q · 星弧飞弹</b>
+              <span>按住蓄力，松开放射。蓄力越久伤害和速度越高。</span>
+            </div>
+            <div class="help-item">
+              <b>F · 引力法阵</b>
+              <span>按住显示青色落点，松开释放；1 秒内爆炸并造成范围伤害。</span>
+            </div>
+            <div class="help-item">
+              <b>E · 折跃</b>
+              <span>向移动方向闪现 8m，附带 0.24 秒无敌帧，可穿过 Boss 地面攻击。</span>
+            </div>
+            <div class="help-item">
+              <b>R · 天穹裂隙</b>
+              <span>2.5 秒引导光束，持续伤害；引导期间注意 Boss 弹幕。</span>
+            </div>
+            <div class="help-item">
+              <b>Space · 跳跃</b>
+              <span>躲 Boss 重拳/冲击波的地面伤害；弹幕仍然会命中。</span>
+            </div>
+            <div class="help-item">
+              <b>被动 · 星辉印记</b>
+              <span>技能命中叠层，3 层后下一次普攻引爆额外伤害。</span>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button id="help-close" class="primary-button" type="button">返回</button>
+          </div>
         </div>
       </div>
 

@@ -39,6 +39,13 @@ export interface ProjectileCallbacks {
   onDummyHit: (damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
   onPlayerHit: (damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
   onWallHit: (point: THREE.Vector3, kind: ProjectileKind) => void;
+  onAddHit?: (targetId: number, damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
+}
+
+export interface ProjectileExtraTarget {
+  id: number;
+  collider: RAPIER.Collider;
+  alive: boolean;
 }
 
 const CONFIG: Record<ProjectileKind, ProjectileConfig> = {
@@ -170,6 +177,7 @@ export class ProjectileSystem {
     dummyCollider: RAPIER.Collider,
     dummyAlive: boolean,
     callbacks: ProjectileCallbacks,
+    extraTargets: ProjectileExtraTarget[] = [],
   ): void {
     for (let i = this.projectiles.length - 1; i >= 0; i -= 1) {
       const projectile = this.projectiles[i];
@@ -189,6 +197,17 @@ export class ProjectileSystem {
         const point = previous
           .clone()
           .addScaledVector(projectile.direction, hit.timeOfImpact);
+
+        if (projectile.owner === 'player') {
+          const add = extraTargets.find(
+            (target) => target.alive && target.collider.handle === hit.collider.handle,
+          );
+          if (add) {
+            callbacks.onAddHit?.(add.id, projectile.damage, point, projectile.kind);
+            this.remove(i);
+            continue;
+          }
+        }
 
         if (
           projectile.owner === 'player' &&

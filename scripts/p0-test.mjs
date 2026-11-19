@@ -1,0 +1,21 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-help-button').click(); await page.waitForTimeout(400);
+const helpVisible=await page.locator('#help-screen').isVisible();
+const helpText=await page.locator('#help-screen').textContent();
+await page.locator('#help-close').click(); await page.waitForTimeout(300);
+await page.locator('#start-button').click(); await page.waitForTimeout(7500);
+const afterIntro=await page.evaluate(()=>window.__fpMoba?.state());
+const introHidden=await page.locator('#boss-intro').isVisible();
+const targetVisible=await page.locator('#target-panel').isVisible();
+await page.evaluate(()=>window.__fpMoba?.damageDummy(900)); await page.waitForTimeout(500);
+const phase=await page.evaluate(()=>window.__fpMoba?.state());
+const transitionIntro=await page.locator('#boss-intro').isVisible();
+await page.screenshot({path:'screenshots/boss-phase-transition.png'});
+console.log(JSON.stringify({helpVisible,helpText:helpText?.slice(0,80),afterIntro,introHidden,targetVisible,phase,transitionIntro,errors},null,2));
+await browser.close();
+

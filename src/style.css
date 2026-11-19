@@ -197,6 +197,107 @@ body.low-health #vignette {
   transform: translate(-50%, -6px);
 }
 
+.boss-intro {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  z-index: 12;
+  min-width: min(520px, 80vw);
+  padding: 18px 26px 16px;
+  transform: translate(-50%, -50%);
+  border-top: 1px solid rgba(232, 199, 122, 0.55);
+  border-bottom: 1px solid rgba(232, 199, 122, 0.3);
+  text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(5, 9, 18, 0.72), transparent);
+  pointer-events: none;
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+
+.boss-intro.hidden {
+  opacity: 0;
+  transform: translate(-50%, -45%);
+}
+
+.boss-intro-eyebrow {
+  color: var(--gold-strong);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 9px;
+  letter-spacing: 0.35em;
+}
+
+.boss-intro h2 {
+  margin: 7px 0 5px;
+  color: #fff3d2;
+  font-family: "STKaiti", "KaiTi", serif;
+  font-size: 34px;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 26px rgba(232, 199, 122, 0.35);
+}
+
+.boss-intro p {
+  margin: 0;
+  color: rgba(211, 226, 247, 0.75);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+#hit-direction {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 11;
+  width: 220px;
+  height: 220px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+#hit-direction.hidden {
+  opacity: 0;
+}
+
+#hit-direction span {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 4px;
+  height: 46px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(255, 92, 122, 0.95), transparent);
+  box-shadow: 0 0 18px rgba(255, 92, 122, 0.8);
+  transform-origin: 50% 114px;
+  transform: translateX(-50%) rotate(var(--hit-angle, 0rad));
+}
+
+.help-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.help-item {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(143, 186, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(3, 8, 17, 0.34);
+}
+
+.help-item b {
+  color: var(--gold-strong);
+  font-size: 10px;
+}
+
+.help-item span {
+  color: rgba(190, 211, 236, 0.78);
+  font-size: 9px;
+  line-height: 1.65;
+}
+
 .target-phase {
   margin-top: 5px;
   color: rgba(255, 170, 190, 0.75);

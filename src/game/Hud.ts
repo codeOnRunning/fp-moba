@@ -25,6 +25,12 @@ export class Hud {
   private readonly targetHpText = element<HTMLSpanElement>('target-hp-text');
   private readonly targetHpFill = element<HTMLDivElement>('target-hp-fill');
   private readonly targetPhase = element<HTMLDivElement>('target-phase');
+  private readonly bossIntro = element<HTMLDivElement>('boss-intro');
+  private readonly bossIntroTitle = element<HTMLHeadingElement>('boss-intro-title');
+  private readonly bossIntroSubtitle = element<HTMLParagraphElement>('boss-intro-subtitle');
+  private readonly hitDirection = element<HTMLDivElement>('hit-direction');
+  private readonly helpScreen = element<HTMLDivElement>('help-screen');
+  private readonly helpClose = element<HTMLButtonElement>('help-close');
   private readonly victoryScreen = element<HTMLDivElement>('victory-screen');
   private readonly victorySummary = element<HTMLParagraphElement>('victory-summary');
   private readonly victoryBest = element<HTMLParagraphElement>('victory-best');
@@ -73,6 +79,7 @@ export class Hud {
 
   private toastTimer = 0;
   private hitmarkerTimer = 0;
+  private hitDirectionTimer = 0;
 
   constructor() {
     this.setHealth(100, 100);
@@ -252,6 +259,37 @@ export class Hud {
     this.hitmarkerTimer = window.setTimeout(() => {
       this.hitmarker.classList.remove('active');
     }, 180);
+  }
+
+  showBossIntro(title: string, subtitle: string): void {
+    this.bossIntroTitle.textContent = title;
+    this.bossIntroSubtitle.textContent = subtitle;
+    this.bossIntro.classList.remove('hidden');
+  }
+
+  hideBossIntro(): void {
+    this.bossIntro.classList.add('hidden');
+  }
+
+  showHitDirection(angleRadians: number): void {
+    this.hitDirection.style.setProperty('--hit-angle', `${angleRadians}rad`);
+    this.hitDirection.classList.remove('hidden');
+    window.clearTimeout(this.hitDirectionTimer);
+    this.hitDirectionTimer = window.setTimeout(() => {
+      this.hitDirection.classList.add('hidden');
+    }, 520);
+  }
+
+  showHelp(): void {
+    this.helpScreen.classList.remove('hidden');
+  }
+
+  hideHelp(): void {
+    this.helpScreen.classList.add('hidden');
+  }
+
+  bindHelpClose(callback: () => void): void {
+    this.helpClose.addEventListener('click', callback);
   }
 
   showDamage(

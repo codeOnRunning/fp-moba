@@ -90,7 +90,7 @@ export class Boss {
     const distance = Math.hypot(playerPosition.x - nextX, playerPosition.z - this.home.z);
     if (this.attackCooldown > 0) return;
 
-    this.attackCooldown = this.phase === 1 ? 2.6 : 1.8;
+    this.attackCooldown = this.phase === 1 ? 2.8 : 2.0;
 
     if (distance < 7.5 && Math.random() < 0.65) {
       this.callbacks.onAttack({
@@ -98,7 +98,7 @@ export class Boss {
         position: new THREE.Vector3(nextX, 0.07, this.home.z),
         radius: 4.6,
         delay: 0.8,
-        damage: 22,
+        damage: 20,
       });
       return;
     }
@@ -109,7 +109,7 @@ export class Boss {
         position: new THREE.Vector3(nextX, 0.07, this.home.z),
         radius: this.phase === 1 ? 8.5 : 10.5,
         delay: 1.0,
-        damage: 18,
+        damage: 15,
       });
       return;
     }

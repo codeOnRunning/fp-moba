@@ -8,6 +8,7 @@ import { AudioSystem } from './AudioSystem';
 import type { DummyShot } from './Dummy';
 import { Effects } from './Effects';
 import { Boss, type BossAttackEvent } from './boss/Boss';
+import { BossAdd } from './boss/BossAdd';
 import { BossTelegraph } from './boss/BossTelegraph';
 import { Hud } from './Hud';
 import { InputController } from './InputController';
@@ -67,7 +68,12 @@ export class Game {
   private player!: PlayerController;
   private dummy!: Boss;
   private readonly bossTelegraphs: BossTelegraph[] = [];
+  private readonly bossAdds: Array<{ id: number; add: BossAdd }> = [];
+  private nextBossAddId = 1;
   private bossDefeated = false;
+  private bossIntroRemaining = 0;
+  private bossTransitionRemaining = 0;
+  private bossInvulnerableTime = 0;
   private mageView!: CharacterView;
   private enemyView!: CharacterView;
   private projectiles!: ProjectileSystem;
@@ -83,6 +89,7 @@ export class Game {
 
   private readonly settings: ComfortSettings = loadSettings();
   private settingsPanel!: SettingsPanel;
+  private helpOpen = false;
   private cameraMode: 'first' | 'third' = this.settings.cameraMode;
   private started = false;
   private running = false;
@@ -314,6 +321,8 @@ export class Game {
         faceDummy: () => void;
         damageDummy: (amount: number) => void;
         damagePlayer: (amount: number) => void;
+        damageAdds: (amount: number) => void;
+        damagePlayerFrom: (x: number, z: number) => void;
       };
     }).__fpMoba = {
       state: () => ({
@@ -333,6 +342,10 @@ export class Game {
         playerHealth: this.playerHealth,
         runRound: this.runRound,
         upgrades: Object.fromEntries(this.upgrades),
+        bossIntroRemaining: this.bossIntroRemaining,
+        bossTransitionRemaining: this.bossTransitionRemaining,
+        bossInvulnerableTime: this.bossInvulnerableTime,
+        bossAdds: this.bossAdds.length,
         playerLevel: this.playerLevel,
         playerXp: this.playerXp,
         xpToNext: this.xpToNext,
@@ -378,6 +391,18 @@ export class Game {
           'enemy',
         );
       },
+      damageAdds: (amount: number) => {
+        for (const { id, add } of [...this.bossAdds]) {
+          this.onBossAddHit(id, amount, add.position.clone(), 'q');
+        }
+      },
+      damagePlayerFrom: (x: number, z: number) => {
+        const point = this.player.position.clone();
+        point.x += x;
+        point.z += z;
+        point.y += 0.2;
+        this.onPlayerHit(5, point, 'enemy');
+      },
     };
   }
 
@@ -419,6 +444,13 @@ export class Game {
     document.getElementById('pause-settings-button')?.addEventListener('click', () => {
       this.openSettings();
     });
+    document.getElementById('start-help-button')?.addEventListener('click', () => {
+      this.openHelp();
+    });
+    document.getElementById('pause-help-button')?.addEventListener('click', () => {
+      this.openHelp();
+    });
+    this.hud.bindHelpClose(() => this.closeHelp());
     this.hud.bindRespawn(() => this.respawn());
     this.hud.bindVictoryRetry(() => this.restartBoss());
   }
@@ -429,10 +461,13 @@ export class Game {
     this.started = true;
     this.running = true;
     this.settingsPanel?.hide();
+    this.helpOpen = false;
+    this.hud.hideHelp();
     this.hud.hideStart();
     this.hud.hidePause();
     this.audio.resume();
     this.hud.showToast('舒适模式：第三人称 · FOV 70 · 无武器晃动 · V 切换第一人称', 3200);
+    this.beginBossIntro();
     this.lastTime = performance.now();
     this.accumulator = 0;
 
@@ -447,6 +482,8 @@ export class Game {
     if (this.playerDead) return;
 
     this.settingsPanel?.hide();
+    this.helpOpen = false;
+    this.hud.hideHelp();
     this.hud.hidePause();
     this.audio.resume();
     this.running = true;
@@ -463,6 +500,16 @@ export class Game {
   private cancelWAim(): void {
     this.wAiming = false;
     this.wPreview?.setVisible(false);
+  }
+
+  private beginBossIntro(duration = 1.5): void {
+    this.bossIntroRemaining = duration;
+    this.bossTransitionRemaining = 0;
+    this.bossInvulnerableTime = duration;
+    this.hud.showBossIntro(
+      '星蚀守卫',
+      `轮回 ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+    );
   }
 
   private pause(): void {
@@ -487,6 +534,28 @@ export class Game {
 
   private closeSettings(): void {
     this.settingsPanel.hide();
+    if (!this.started) {
+      this.hud.showStart();
+    } else if (!this.playerDead) {
+      this.hud.showPause();
+    }
+  }
+
+  private openHelp(): void {
+    this.running = false;
+    this.helpOpen = true;
+    this.qHeld = false;
+    this.qCharge = 0;
+    this.cancelWAim();
+    this.input.exitLock();
+    this.hud.hideStart();
+    this.hud.hidePause();
+    this.hud.showHelp();
+  }
+
+  private closeHelp(): void {
+    this.helpOpen = false;
+    this.hud.hideHelp();
     if (!this.started) {
       this.hud.showStart();
     } else if (!this.playerDead) {
@@ -538,7 +607,12 @@ export class Game {
       return;
     }
 
-    if (this.started && !this.playerDead && !this.settingsPanel?.isOpen) {
+    if (
+      this.started &&
+      !this.playerDead &&
+      !this.settingsPanel?.isOpen &&
+      !this.helpOpen
+    ) {
       this.running = false;
       this.hud.showPause();
     }
@@ -613,6 +687,15 @@ export class Game {
     this.invulnerableTime = Math.max(0, this.invulnerableTime - dt);
     this.markTimer = Math.max(0, this.markTimer - dt);
     if (this.markTimer <= 0) this.markStacks = 0;
+    this.bossIntroRemaining = Math.max(0, this.bossIntroRemaining - dt);
+    this.bossTransitionRemaining = Math.max(0, this.bossTransitionRemaining - dt);
+    this.bossInvulnerableTime = Math.max(0, this.bossInvulnerableTime - dt);
+    if (this.bossIntroRemaining < 0.01) this.bossIntroRemaining = 0;
+    if (this.bossTransitionRemaining < 0.01) this.bossTransitionRemaining = 0;
+    if (this.bossInvulnerableTime < 0.01) this.bossInvulnerableTime = 0;
+    if (this.bossIntroRemaining <= 0 && this.bossTransitionRemaining <= 0) {
+      this.hud.hideBossIntro();
+    }
     this.playerMana = Math.min(this.maxMana, this.playerMana + 10 * dt);
 
     if (this.input.consumePressed('KeyV')) {
@@ -688,7 +771,9 @@ export class Game {
     this.enemyActionLock = Math.max(0, this.enemyActionLock - dt);
 
     this.player.update(dt, move, this.input.yaw);
-    this.dummy.update(dt, this.player.position);
+    if (this.bossIntroRemaining <= 0 && this.bossTransitionRemaining <= 0) {
+      this.dummy.update(dt, this.player.position);
+    }
     this.world.step();
     this.player.sync();
     this.updateGravityZones(dt);
@@ -716,6 +801,7 @@ export class Game {
       this.enemyView.play('Idle', 0.18);
     }
     this.enemyView.update(dt);
+    this.updateBossAdds(dt);
 
     this.projectiles.update(
       dt,
@@ -727,7 +813,14 @@ export class Game {
         onDummyHit: (damage, point, kind) => this.onDummyHit(damage, point, kind),
         onPlayerHit: (damage, point, kind) => this.onPlayerHit(damage, point, kind),
         onWallHit: (point, kind) => this.onWallHit(point, kind),
+        onAddHit: (id, damage, point, kind) =>
+          this.onBossAddHit(id, damage, point, kind),
       },
+      this.bossAdds.map(({ id, add }) => ({
+        id,
+        collider: add.collider,
+        alive: add.alive,
+      })),
     );
   }
 
@@ -869,7 +962,12 @@ export class Game {
     const direction = new THREE.Vector3();
     this.camera.getWorldDirection(direction);
     const alignment = distance > 0.001 ? direction.dot(toDummy.normalize()) : 0;
-    const visible = this.dummy.alive && distance < 42 && alignment > 0.15;
+    const visible =
+      this.dummy.alive &&
+      this.bossIntroRemaining <= 0 &&
+      this.bossTransitionRemaining <= 0 &&
+      distance < 42 &&
+      alignment > 0.15;
 
     this.hud.setTarget(
       visible,
@@ -941,6 +1039,11 @@ export class Game {
               this.dummy.position.clone().add(new THREE.Vector3(0, 0.5, 0)),
               'q',
             );
+          }
+          for (const { id, add } of [...this.bossAdds]) {
+            if (add.alive && horizontalDistance(center, add.position) <= radius) {
+              this.onBossAddHit(id, 78, add.position.clone(), 'q');
+            }
           }
         },
       }),
@@ -1048,6 +1151,20 @@ export class Game {
           'q',
         );
         this.effects.impact(end, 0x57e0f0, 0.65);
+      } else if (hit) {
+        const add = this.bossAdds.find(
+          ({ add: target }) =>
+            target.alive && target.collider.handle === hit.collider.handle,
+        );
+        if (add) {
+          this.onBossAddHit(
+            add.id,
+            Math.round(28 * this.rDamageMultiplier),
+            end.clone(),
+            'q',
+          );
+          this.effects.impact(end, 0x57e0f0, 0.65);
+        }
       }
     }
 
@@ -1136,6 +1253,12 @@ export class Game {
     point: THREE.Vector3,
     kind: ProjectileKind,
   ): void {
+    if (this.bossInvulnerableTime > 0.001) {
+      this.hud.showToast('Boss 护盾 / 登场无敌', 450);
+      this.effects.impact(point, 0x9fe8ff, 0.5);
+      return;
+    }
+
     let finalDamage = Math.round(damage * this.damageMultiplier);
 
     if (kind === 'basic' && this.markStacks >= 3) {
@@ -1210,6 +1333,27 @@ export class Game {
     this.hud.setExperience(this.playerXp, this.xpToNext, this.playerLevel);
   }
 
+  private showIncomingDirection(source: THREE.Vector3): void {
+    const hitDirection = new THREE.Vector3(
+      source.x - this.player.position.x,
+      0,
+      source.z - this.player.position.z,
+    );
+    if (hitDirection.lengthSq() < 0.001) return;
+    hitDirection.normalize();
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    const right = new THREE.Vector3().crossVectors(
+      forward,
+      new THREE.Vector3(0, 1, 0),
+    );
+    this.hud.showHitDirection(
+      Math.atan2(hitDirection.dot(right), hitDirection.dot(forward)),
+    );
+  }
+
   private onPlayerHit(
     damage: number,
     point: THREE.Vector3,
@@ -1225,6 +1369,26 @@ export class Game {
     this.mageView.play('Hit_A', 0.06, true);
     this.mageActionLock = Math.max(this.mageActionLock, 0.24);
     this.audio.hurt();
+
+    const hitDirection = new THREE.Vector3(
+      point.x - this.player.position.x,
+      0,
+      point.z - this.player.position.z,
+    );
+    if (hitDirection.lengthSq() > 0.001) {
+      hitDirection.normalize();
+      const forward = new THREE.Vector3();
+      this.camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
+      const right = new THREE.Vector3().crossVectors(
+        forward,
+        new THREE.Vector3(0, 1, 0),
+      );
+      this.hud.showHitDirection(
+        Math.atan2(hitDirection.dot(right), hitDirection.dot(forward)),
+      );
+    }
 
     if (this.settings.screenShake > 0) {
       this.shakeTime = 0.14;
@@ -1267,6 +1431,7 @@ export class Game {
             !this.player.isAirborne &&
             distance <= radius
           ) {
+            this.showIncomingDirection(this.dummy.position);
             this.onPlayerHit(
               Math.round(attack.damage * this.bossRoundDamage),
               this.player.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
@@ -1284,7 +1449,7 @@ export class Game {
   private onBossBarrage(origin: THREE.Vector3, directions: THREE.Vector3[]): void {
     for (const direction of directions) {
       this.projectiles.spawn(origin, direction, 'enemy', 'dummy', {
-        damage: Math.round(9 * this.bossRoundDamage),
+        damage: Math.round(8 * this.bossRoundDamage),
       });
     }
     this.effects.muzzle(origin, 0xff5c7a);
@@ -1294,6 +1459,9 @@ export class Game {
   }
 
   private onBossPhaseTwo(): void {
+    this.bossTransitionRemaining = 1.2;
+    this.bossInvulnerableTime = 1.2;
+    this.hud.showBossIntro('第二阶段', '星环解放');
     this.hud.showToast('星蚀守卫 · 第二阶段：星环解放', 1600);
     this.effects.castPulse(
       this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
@@ -1304,16 +1472,56 @@ export class Game {
 
   private onBossSummon(): void {
     this.hud.showToast('星蚀碎片被召唤', 1100);
-    const origin = this.dummy.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-    const base = this.player.position
-      .clone()
-      .add(new THREE.Vector3(0, 0.25, 0))
-      .sub(origin)
-      .normalize();
-    const directions = [-0.2, 0, 0.2].map((spread) =>
-      base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spread),
-    );
-    this.onBossBarrage(origin, directions);
+    const center = this.dummy.position;
+    for (const [index, offsetX] of [-2.2, 2.2].entries()) {
+      const id = this.nextBossAddId++;
+      const add = new BossAdd(
+        this.world,
+        this.scene,
+        new THREE.Vector3(center.x + offsetX, 1.15, center.z + (index === 0 ? -1.4 : 1.4)),
+        (shot) => this.onDummyShoot(shot),
+        () => this.onBossAddDeath(id),
+      );
+      this.bossAdds.push({ id, add });
+    }
+  }
+
+  private updateBossAdds(dt: number): void {
+    for (const { add } of this.bossAdds) {
+      add.update(dt, this.player.position);
+    }
+  }
+
+  private onBossAddHit(
+    id: number,
+    damage: number,
+    point: THREE.Vector3,
+    kind: ProjectileKind,
+  ): void {
+    const entry = this.bossAdds.find((item) => item.id === id);
+    if (!entry || !entry.add.alive) return;
+    const died = entry.add.takeDamage(Math.round(damage * this.damageMultiplier));
+    this.hud.hitMarker();
+    this.hud.showDamage(point, this.camera, Math.round(damage * this.damageMultiplier), 'enemy');
+    this.audio.hit();
+    this.effects.impact(point, kind === 'q' ? 0xc7a4ff : 0x9fe8ff, 0.7);
+    if (died) {
+      this.onBossAddDeath(id);
+    }
+  }
+
+  private onBossAddDeath(id: number): void {
+    const index = this.bossAdds.findIndex((item) => item.id === id);
+    if (index < 0) return;
+    const [{ add }] = this.bossAdds.splice(index, 1);
+    this.effects.impact(add.position, 0xff5c7a, 1.1);
+    this.audio.kill();
+    this.gainExperience(20);
+    add.dispose();
+  }
+
+  private clearBossAdds(): void {
+    for (const { add } of this.bossAdds.splice(0)) add.dispose();
   }
 
   private updateBossTelegraphs(dt: number): void {
@@ -1325,10 +1533,10 @@ export class Game {
   }
 
   private onDummyShoot(shot: DummyShot): void {
-    this.projectiles.spawn(shot.origin, shot.direction, 'enemy', 'dummy');
+    this.projectiles.spawn(shot.origin, shot.direction, 'enemy', 'dummy', {
+      damage: 7,
+    });
     this.effects.muzzle(shot.origin, 0xff5c7a);
-    this.enemyView.play('Spellcast_Shoot', 0.08, true);
-    this.enemyActionLock = 0.55;
     this.audio.enemyShoot();
   }
 
@@ -1336,12 +1544,14 @@ export class Game {
     if (this.bossDefeated || this.upgradePending || this.runFinished) return;
     this.bossDefeated = true;
     this.running = false;
+    this.hud.hideBossIntro();
     this.qHeld = false;
     this.qCharge = 0;
     this.cancelWAim();
     this.beamActiveTime = 0;
     this.beam.hide();
     this.projectiles.clear();
+    this.clearBossAdds();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
 
@@ -1409,6 +1619,7 @@ export class Game {
     this.beamActiveTime = 0;
     this.beam.hide();
     this.projectiles.clear();
+    this.clearBossAdds();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     for (const telegraph of this.bossTelegraphs.splice(0)) telegraph.dispose();
     this.wPreview.setRadiusScale(this.wRadius / 5.2);
@@ -1426,6 +1637,7 @@ export class Game {
       `轮回 ${this.runRound} · 星蚀守卫 ${this.dummy.maxHealth} HP`,
       1800,
     );
+    this.beginBossIntro(1.1);
     this.running = true;
     this.lastTime = performance.now();
     this.accumulator = 0;
@@ -1440,6 +1652,8 @@ export class Game {
     this.running = false;
     this.deathRemaining = 3;
     this.projectiles.clear();
+    this.clearBossAdds();
+    this.hud.hideBossIntro();
     this.qHeld = false;
     this.qCharge = 0;
     this.cancelWAim();
@@ -1513,6 +1727,7 @@ export class Game {
     this.hud.setTarget(false);
     this.hud.hideDeath();
     this.hud.hideVictory();
+    this.beginBossIntro(1.1);
     this.running = true;
     this.lastTime = performance.now();
     this.accumulator = 0;
