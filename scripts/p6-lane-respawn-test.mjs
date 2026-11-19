@@ -1,0 +1,14 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
+await page.selectOption('#mode-select','lane'); await page.locator('#start-button').click(); await page.waitForTimeout(4500);
+await page.evaluate(()=>window.__fpMoba?.damageDummy(99999)); await page.waitForTimeout(700);
+const down=await page.evaluate(()=>window.__fpMoba?.state());
+await page.waitForTimeout(8200);
+const up=await page.evaluate(()=>window.__fpMoba?.state());
+const objectivesVisible=await page.locator('#lane-objectives').isVisible();
+console.log(JSON.stringify({down:{alive:down?.dummyAlive,bossDefeated:down?.bossDefeated,respawn:down?.laneEnemyRespawnTimer},up:{alive:up?.dummyAlive,health:up?.dummyHealth,bossDefeated:up?.bossDefeated,respawn:up?.laneEnemyRespawnTimer},objectivesVisible,errors},null,2));
+await browser.close();

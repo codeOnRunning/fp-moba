@@ -84,6 +84,11 @@ export class Hud {
   private readonly pauseStats = element<HTMLParagraphElement>('pause-stats');
   private readonly victoryStats = element<HTMLParagraphElement>('victory-stats');
   private readonly minimap = element<HTMLCanvasElement>('minimap');
+  private readonly laneObjectives = element<HTMLDivElement>('lane-objectives');
+  private readonly laneTowerText = element<HTMLElement>('lane-tower-text');
+  private readonly laneTowerFill = element<HTMLDivElement>('lane-tower-fill');
+  private readonly laneNexusText = element<HTMLElement>('lane-nexus-text');
+  private readonly laneNexusFill = element<HTMLDivElement>('lane-nexus-fill');
   private readonly deathScreen = element<HTMLDivElement>('death-screen');
   private readonly deathCountdown = element<HTMLParagraphElement>('death-countdown');
   private readonly respawnButton = element<HTMLButtonElement>('respawn-button');
@@ -368,6 +373,21 @@ export class Hud {
       `造成伤害 ${Math.round(dealt)} · 承受伤害 ${Math.round(taken)} · 命中 ${hits}`;
     this.pauseStats.textContent = text;
     this.victoryStats.textContent = text;
+  }
+
+  setLaneObjectives(
+    visible: boolean,
+    towerHealth = 0,
+    towerMax = 500,
+    nexusHealth = 0,
+    nexusMax = 1000,
+  ): void {
+    this.laneObjectives.classList.toggle('hidden', !visible);
+    if (!visible) return;
+    this.laneTowerText.textContent = `${Math.max(0, Math.ceil(towerHealth))} / ${towerMax}`;
+    this.laneTowerFill.style.width = `${Math.max(0, Math.min(1, towerHealth / towerMax)) * 100}%`;
+    this.laneNexusText.textContent = `${Math.max(0, Math.ceil(nexusHealth))} / ${nexusMax}`;
+    this.laneNexusFill.style.width = `${Math.max(0, Math.min(1, nexusHealth / nexusMax)) * 100}%`;
   }
 
   updateMinimap(

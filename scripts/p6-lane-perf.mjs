@@ -1,12 +1,10 @@
 ﻿import { chromium } from 'playwright-core';
 const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
 const page=await browser.newPage({viewport:{width:1920,height:1080}});
-const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
 await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
 await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},null,{timeout:60000});
-await page.selectOption('#mode-select','lane');
-await page.locator('#start-button').click(); await page.waitForTimeout(5000);
+await page.selectOption('#mode-select','lane'); await page.locator('#start-button').click(); await page.waitForTimeout(5000);
 await page.evaluate(()=>window.__fpMoba?.faceDummy()); await page.waitForTimeout(500);
-console.log(JSON.stringify({perf:await page.locator('#perf').textContent(),state:await page.evaluate(()=>window.__fpMoba?.state()),errors},null,2));
 await page.screenshot({path:'screenshots/p6-lane-1080p.png'});
+console.log(await page.locator('#perf').textContent(), await page.locator('#lane-objectives').isVisible());
 await browser.close();

@@ -147,6 +147,7 @@ export class Game {
   private laneNextId = 100000;
   private laneNextStructureId = 200000;
   private laneEnemyAttackTimer = 1.2;
+  private laneEnemyRespawnTimer = 0;
   private runRound = 1;
   private readonly upgrades = new Map<UpgradeId, number>();
   private runFinished = false;
@@ -496,6 +497,7 @@ export class Game {
         shopItemsBought: this.shopItemsBought,
         shopDamageBonus: this.shopDamageBonus,
         shopCooldownBonus: this.shopCooldownBonus,
+        laneEnemyRespawnTimer: this.laneEnemyRespawnTimer,
         kills: this.kills,
         bossModifier: this.bossModifier,
         build: this.buildSummary,
@@ -765,6 +767,7 @@ export class Game {
     this.clearLaneStructures();
     this.laneWaveTimer = 1.5;
     this.laneEnemyAttackTimer = 1.2;
+    this.laneEnemyRespawnTimer = 0;
     this.dummy.setVariant('star');
     this.dummy.setMaxHealth(1200);
     this.applyBossModifiers();
@@ -801,6 +804,17 @@ export class Game {
 
   private clearLaneStructures(): void {
     for (const structure of this.laneStructures.splice(0)) structure.dispose();
+  }
+
+  private respawnLaneEnemy(): void {
+    this.dummy.setVariant('star');
+    this.dummy.setMaxHealth(1200);
+    this.dummy.respawn();
+    this.bossDefeated = false;
+    this.laneEnemyAttackTimer = 1.2;
+    this.enemyView.setVisible(true);
+    this.enemyView.play('Idle', 0.1);
+    this.hud.showToast('敌方英雄已重生', 1000);
   }
 
   private clearLaneMinions(): void {
@@ -1380,6 +1394,15 @@ export class Game {
     this.player.update(dt, move, this.input.yaw);
 
     if (this.gameMode === 'lane') {
+      if (this.laneEnemyRespawnTimer > 0) {
+        this.laneEnemyRespawnTimer = Math.max(
+          0,
+          this.laneEnemyRespawnTimer - dt,
+        );
+        if (this.laneEnemyRespawnTimer <= 0) {
+          this.respawnLaneEnemy();
+        }
+      }
       this.laneWaveTimer = Math.max(0, this.laneWaveTimer - dt);
       if (this.laneWaveTimer <= 0) {
         this.laneWaveTimer = 12;
@@ -1648,6 +1671,19 @@ export class Game {
         ? `中路试炼 · ${this.difficultyConfig.shortLabel} · ${this.dummy.phaseLabel}`
         : `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.difficultyConfig.shortLabel} · ${this.dummy.phaseLabel}`,
       this.bossDisplayName,
+    );
+    const laneTower = this.laneStructures.find(
+      (structure) => structure.kind === 'tower',
+    );
+    const laneNexus = this.laneStructures.find(
+      (structure) => structure.kind === 'nexus',
+    );
+    this.hud.setLaneObjectives(
+      this.gameMode === 'lane',
+      laneTower?.health ?? 0,
+      500,
+      laneNexus?.health ?? 0,
+      1000,
     );
     this.hud.updateMinimap(
       this.player.position,
@@ -2424,8 +2460,9 @@ export class Game {
     if (this.bossDefeated || this.upgradePending || this.runFinished) return;
     if (this.gameMode === 'lane') {
       this.bossDefeated = true;
+      this.laneEnemyRespawnTimer = 8;
       this.hud.setTarget(false);
-      this.hud.showToast('敌方英雄被击退 · 水晶仍在', 1600);
+      this.hud.showToast('敌方英雄被击退 · 8 秒后重生', 1600);
       this.enemyView.play('Death_A', 0.1, true);
       this.enemyActionLock = 3.0;
       return;
@@ -2636,6 +2673,7 @@ export class Game {
     if (this.gameMode === 'lane') {
       this.laneWaveTimer = 1.5;
       this.laneEnemyAttackTimer = 1.2;
+      this.laneEnemyRespawnTimer = 0;
       this.clearLaneMinions();
       this.clearLaneStructures();
       this.spawnLaneStructures();
