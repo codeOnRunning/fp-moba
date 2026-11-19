@@ -6,7 +6,9 @@ export type UpgradeId =
   | 'cooldown'
   | 'vitality'
   | 'basicSpeed'
-  | 'markDamage';
+  | 'markDamage'
+  | 'voidHoming'
+  | 'voidRadius';
 
 export interface UpgradeDefinition {
   id: UpgradeId;
@@ -63,6 +65,18 @@ export const UPGRADE_POOL: UpgradeDefinition[] = [
     name: '星辉烙印',
     description: '印记引爆伤害 +50%',
     glyph: '✶',
+  },
+  {
+    id: 'voidHoming',
+    name: '虚空追猎',
+    description: '追踪法球伤害 +25%',
+    glyph: '◉',
+  },
+  {
+    id: 'voidRadius',
+    name: '坍缩边界',
+    description: '虚空区域半径 +20%',
+    glyph: '◌',
   },
 ];
 

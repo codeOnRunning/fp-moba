@@ -36,7 +36,7 @@
 
       <div id="target-panel" class="target-panel hidden">
         <div class="target-head">
-          <span class="target-name">星蚀守卫</span>
+          <span id="target-name" class="target-name">星蚀守卫</span>
           <span id="target-hp-text">300 / 300</span>
         </div>
         <div class="bar target-bar">
@@ -197,7 +197,7 @@
       <div id="death-screen" class="screen hidden">
         <div class="screen-card compact danger">
           <div class="eyebrow">DEFEATED</div>
-          <h2>你被星蚀守卫击倒了</h2>
+          <h2 id="death-title">你被星蚀守卫击倒了</h2>
           <p id="death-countdown" class="lead">正在重构星辉之躯… 3</p>
           <button id="respawn-button" class="primary-button" type="button" disabled>
             等待复活
@@ -250,14 +250,14 @@
           <h2>选择星辉强化</h2>
           <p id="upgrade-subtitle" class="lead">下一轮回即将开始</p>
           <div id="upgrade-options" class="upgrade-options"></div>
-          <p class="fine-print">击败星蚀守卫后获得 · 强化持续到本轮结束</p>
+          <p class="fine-print">击败 Boss 后获得 · 强化持续到本轮结束</p>
         </div>
       </div>
 
       <div id="victory-screen" class="screen hidden">
         <div class="screen-card compact victory-card">
           <div class="eyebrow">BOSS CLEARED</div>
-          <h2>星蚀守卫已倒下</h2>
+          <h2 id="victory-title">星蚀守卫已倒下</h2>
           <p id="victory-summary" class="lead">用时 00:00 · 剩余生命 100</p>
           <p id="victory-best" class="fine-print">本地最快 00:00</p>
           <button id="victory-retry-button" class="primary-button" type="button">

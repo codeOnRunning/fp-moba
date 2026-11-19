@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { DummyShot } from '../Dummy';
 
+export type BossVariant = 'star' | 'void';
+
 export interface BossAttackEvent {
-  type: 'slam' | 'shockwave';
+  type: 'slam' | 'shockwave' | 'void';
   position: THREE.Vector3;
   radius: number;
   delay: number;
@@ -16,6 +18,9 @@ export interface BossCallbacks {
   onPhaseTwo: () => void;
   onSummon: () => void;
   onDeath: () => void;
+  onTeleport?: (position: THREE.Vector3) => void;
+  onHomingOrbs?: (origin: THREE.Vector3, count: number) => void;
+  onMirror?: () => void;
 }
 
 export class Boss {
@@ -25,12 +30,15 @@ export class Boss {
   health = 1800;
   alive = true;
   phase: 1 | 2 = 1;
+  variant: BossVariant = 'star';
 
   private readonly home: THREE.Vector3;
   private attackCooldown = 2.2;
   private hitFlash = 0;
   private deathCount = 0;
   private phaseAnnounced = false;
+  private voidTeleportCooldown = 3.8;
+  private voidAttackCount = 0;
 
   constructor(
     world: RAPIER.World,
@@ -72,8 +80,23 @@ export class Boss {
     // The skeleton view is rendered by Game; there is no primitive body.
   }
 
+  setVariant(variant: BossVariant): void {
+    this.variant = variant;
+    this.voidTeleportCooldown = 3.8;
+    this.voidAttackCount = 0;
+  }
+
+  get isVoid(): boolean {
+    return this.variant === 'void';
+  }
+
   update(dt: number, playerPosition: THREE.Vector3): void {
     if (!this.alive) return;
+
+    if (this.variant === 'void') {
+      this.updateVoid(dt, playerPosition);
+      return;
+    }
 
     const current = this.body.translation();
     // Keep a readable 4m fighting distance instead of walking into the player.
@@ -128,6 +151,67 @@ export class Boss {
     this.callbacks.onBarrage(origin, directions);
   }
 
+  private updateVoid(dt: number, playerPosition: THREE.Vector3): void {
+    this.voidTeleportCooldown -= dt;
+    if (this.voidTeleportCooldown <= 0) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 5 + Math.random() * 4;
+      const x = THREE.MathUtils.clamp(
+        playerPosition.x + Math.cos(angle) * distance,
+        -23,
+        14,
+      );
+      const z = THREE.MathUtils.clamp(
+        playerPosition.z + Math.sin(angle) * distance,
+        -8,
+        8,
+      );
+      this.body.setTranslation({ x, y: this.home.y, z }, true);
+      this.callbacks.onTeleport?.(
+        new THREE.Vector3(x, this.home.y, z),
+      );
+      this.voidTeleportCooldown = this.phase === 1 ? 4.2 : 2.8;
+    }
+
+    this.attackCooldown -= dt;
+    if (this.attackCooldown > 0) return;
+    this.attackCooldown = this.phase === 1 ? 2.6 : 2.0;
+    this.voidAttackCount += 1;
+
+    const origin = new THREE.Vector3(
+      this.position.x,
+      this.home.y + 1.3,
+      this.position.z,
+    );
+    const roll = Math.random();
+
+    if (roll < 0.42) {
+      this.callbacks.onAttack({
+        type: 'void',
+        position: new THREE.Vector3(
+          playerPosition.x,
+          0.07,
+          playerPosition.z,
+        ),
+        radius: this.phase === 1 ? 3.4 : 4.0,
+        delay: 1.0,
+        damage: 14,
+      });
+      return;
+    }
+
+    if (roll < 0.78 || this.phase === 1) {
+      this.callbacks.onHomingOrbs?.(origin, this.phase === 1 ? 3 : 5);
+      return;
+    }
+
+    if (this.voidAttackCount % 2 === 0) {
+      this.callbacks.onMirror?.();
+    } else {
+      this.callbacks.onHomingOrbs?.(origin, 4);
+    }
+  }
+
   takeDamage(amount: number): boolean {
     if (!this.alive) return false;
 
@@ -164,6 +248,8 @@ export class Boss {
     this.phase = 1;
     this.phaseAnnounced = false;
     this.attackCooldown = 2.2;
+    this.voidTeleportCooldown = 3.8;
+    this.voidAttackCount = 0;
     this.hitFlash = 0;
     this.body.setTranslation(
       { x: this.home.x, y: this.home.y, z: this.home.z },
@@ -173,6 +259,9 @@ export class Boss {
   }
 
   get phaseLabel(): string {
+    if (this.variant === 'void') {
+      return this.phase === 1 ? '第一阶段' : '第二阶段 · 虚空回响';
+    }
     return this.phase === 1 ? '第一阶段' : '第二阶段 · 星环解放';
   }
 

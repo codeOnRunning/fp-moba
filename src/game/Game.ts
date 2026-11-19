@@ -7,7 +7,11 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { AudioSystem } from './AudioSystem';
 import type { DummyShot } from './Dummy';
 import { Effects } from './Effects';
-import { Boss, type BossAttackEvent } from './boss/Boss';
+import {
+  Boss,
+  type BossAttackEvent,
+  type BossVariant,
+} from './boss/Boss';
 import { BossAdd } from './boss/BossAdd';
 import { BossTelegraph } from './boss/BossTelegraph';
 import { Hud } from './Hud';
@@ -49,9 +53,12 @@ const E_MANA_COST = 20;
 const R_COOLDOWN = 45;
 const R_MANA_COST = 50;
 const BASIC_COOLDOWN = 0.32;
-const BOSS_ROUNDS = 3;
-const BOSS_BASE_HEALTH = 1800;
-const BOSS_HEALTH_GROWTH = 0.2;
+const BOSS_SEQUENCE: BossVariant[] = ['star', 'void'];
+const BOSS_ROUNDS = BOSS_SEQUENCE.length;
+const BOSS_CONFIG: Record<BossVariant, { name: string; health: number }> = {
+  star: { name: '星蚀守卫', health: 1800 },
+  void: { name: '虚空术士', health: 2200 },
+};
 const BOSS_DAMAGE_GROWTH = 0.15;
 
 export class Game {
@@ -197,8 +204,24 @@ export class Game {
     return 1 + (this.upgrades.get('markDamage') ?? 0) * 0.5;
   }
 
+  private get voidHomingMultiplier(): number {
+    return 1 + (this.upgrades.get('voidHoming') ?? 0) * 0.25;
+  }
+
+  private get voidRadiusMultiplier(): number {
+    return 1 + (this.upgrades.get('voidRadius') ?? 0) * 0.2;
+  }
+
+  private get currentBossKind(): BossVariant {
+    return BOSS_SEQUENCE[Math.min(this.runRound - 1, BOSS_ROUNDS - 1)];
+  }
+
+  private get bossDisplayName(): string {
+    return BOSS_CONFIG[this.currentBossKind].name;
+  }
+
   private get bossRoundHealth(): number {
-    return BOSS_BASE_HEALTH * (1 + (this.runRound - 1) * BOSS_HEALTH_GROWTH);
+    return BOSS_CONFIG[this.currentBossKind].health;
   }
 
   private get bossRoundDamage(): number {
@@ -249,15 +272,14 @@ export class Game {
       onPhaseTwo: () => this.onBossPhaseTwo(),
       onSummon: () => this.onBossSummon(),
       onDeath: () => this.onDummyDeath(),
+      onTeleport: (position) => this.onBossTeleport(position),
+      onHomingOrbs: (origin, count) => this.onBossHomingOrbs(origin, count),
+      onMirror: () => this.onBossMirror(),
     });
+    this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
     this.dummy.setPrimitiveVisible(false);
-    this.enemyView = new CharacterView(
-      this.assets.skeleton,
-      1.15,
-      0x8a91a8,
-      0x4b0b1f,
-    );
+    this.enemyView = this.createEnemyView(this.currentBossKind);
     this.enemyView.setPosition(
       spawns.dummySpawn.x,
       this.enemyView.groundOffset,
@@ -341,6 +363,8 @@ export class Game {
         dummyPosition: this.dummy.position.toArray(),
         playerHealth: this.playerHealth,
         runRound: this.runRound,
+        bossKind: this.currentBossKind,
+        bossName: this.bossDisplayName,
         upgrades: Object.fromEntries(this.upgrades),
         bossIntroRemaining: this.bossIntroRemaining,
         bossTransitionRemaining: this.bossTransitionRemaining,
@@ -404,6 +428,30 @@ export class Game {
         this.onPlayerHit(5, point, 'enemy');
       },
     };
+  }
+
+  private createEnemyView(kind: BossVariant): CharacterView {
+    const isVoid = kind === 'void';
+    const view = new CharacterView(
+      this.assets.skeleton,
+      isVoid ? 1.08 : 1.15,
+      isVoid ? 0xc99bff : 0x8a91a8,
+      isVoid ? 0x4f1688 : 0x4b0b1f,
+    );
+    view.setPosition(
+      this.dummy.position.x,
+      view.groundOffset,
+      this.dummy.position.z,
+    );
+    return view;
+  }
+
+  private replaceEnemyView(): void {
+    this.enemyView.root.removeFromParent();
+    this.enemyView = this.createEnemyView(this.currentBossKind);
+    this.scene.add(this.enemyView.root);
+    this.enemyView.setVisible(true);
+    this.enemyView.play('Idle', 0);
   }
 
   private setupRenderer(): void {
@@ -507,8 +555,8 @@ export class Game {
     this.bossTransitionRemaining = 0;
     this.bossInvulnerableTime = duration;
     this.hud.showBossIntro(
-      '星蚀守卫',
-      `轮回 ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+      this.bossDisplayName,
+      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
     );
   }
 
@@ -821,6 +869,7 @@ export class Game {
         collider: add.collider,
         alive: add.alive,
       })),
+      this.player.position,
     );
   }
 
@@ -973,7 +1022,8 @@ export class Game {
       visible,
       this.dummy.health,
       this.dummy.maxHealth,
-      `轮回 ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+      `Boss ${this.runRound}/${BOSS_ROUNDS} · ${this.dummy.phaseLabel}`,
+      this.bossDisplayName,
     );
     this.hud.setCrosshairTargeting(
       this.dummy.alive && distance < 36 && alignment > 0.94,
@@ -1409,11 +1459,20 @@ export class Game {
   }
 
   private onBossAttack(attack: BossAttackEvent): void {
-    const color = attack.type === 'slam' ? 0xff5c7a : 0xffa45c;
+    const color =
+      attack.type === 'slam'
+        ? 0xff5c7a
+        : attack.type === 'shockwave'
+          ? 0xffa45c
+          : 0xb14cff;
+    const attackRadius =
+      attack.type === 'void'
+        ? attack.radius * this.voidRadiusMultiplier
+        : attack.radius;
     this.bossTelegraphs.push(
       new BossTelegraph(this.scene, {
         position: attack.position,
-        radius: attack.radius,
+        radius: attackRadius,
         delay: attack.delay,
         color,
         onComplete: (center, radius) => {
@@ -1461,8 +1520,14 @@ export class Game {
   private onBossPhaseTwo(): void {
     this.bossTransitionRemaining = 1.2;
     this.bossInvulnerableTime = 1.2;
-    this.hud.showBossIntro('第二阶段', '星环解放');
-    this.hud.showToast('星蚀守卫 · 第二阶段：星环解放', 1600);
+    this.hud.showBossIntro(
+      '第二阶段',
+      this.dummy.isVoid ? '虚空回响' : '星环解放',
+    );
+    this.hud.showToast(
+      `${this.bossDisplayName} · ${this.dummy.phaseLabel}`,
+      1600,
+    );
     this.effects.castPulse(
       this.dummy.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
       0xff5c7a,
@@ -1470,20 +1535,76 @@ export class Game {
     this.audio.qCast();
   }
 
-  private onBossSummon(): void {
-    this.hud.showToast('星蚀碎片被召唤', 1100);
+  private spawnBossAdds(variant: 'shard' | 'mirror', count: number): void {
     const center = this.dummy.position;
-    for (const [index, offsetX] of [-2.2, 2.2].entries()) {
+    for (let index = 0; index < count; index += 1) {
+      const angle = (Math.PI * 2 * index) / count + Math.random() * 0.35;
+      const radius = 2.6 + Math.random() * 1.2;
       const id = this.nextBossAddId++;
       const add = new BossAdd(
         this.world,
         this.scene,
-        new THREE.Vector3(center.x + offsetX, 1.15, center.z + (index === 0 ? -1.4 : 1.4)),
+        new THREE.Vector3(
+          center.x + Math.cos(angle) * radius,
+          1.15,
+          center.z + Math.sin(angle) * radius,
+        ),
         (shot) => this.onDummyShoot(shot),
         () => this.onBossAddDeath(id),
+        variant,
       );
       this.bossAdds.push({ id, add });
     }
+  }
+
+  private onBossSummon(): void {
+    if (this.dummy.isVoid) {
+      this.hud.showToast('虚空术士召唤镜像', 1100);
+      this.spawnBossAdds('mirror', 2);
+      return;
+    }
+    this.hud.showToast('星蚀碎片被召唤', 1100);
+    this.spawnBossAdds('shard', 2);
+  }
+
+  private onBossTeleport(position: THREE.Vector3): void {
+    this.effects.impact(position.clone().add(new THREE.Vector3(0, 0.8, 0)), 0xb14cff, 1.4);
+    this.effects.castPulse(position.clone().add(new THREE.Vector3(0, 0.6, 0)), 0xb14cff);
+    this.audio.enemyShoot();
+  }
+
+  private onBossHomingOrbs(origin: THREE.Vector3, count: number): void {
+    const target = this.player.position
+      .clone()
+      .add(new THREE.Vector3(0, 0.55, 0));
+    for (let index = 0; index < count; index += 1) {
+      const spread = (index - (count - 1) / 2) * 0.18;
+      const direction = target
+        .clone()
+        .sub(origin)
+        .normalize()
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), spread);
+      this.projectiles.spawn(origin, direction, 'void', 'dummy', {
+        damage: Math.round(
+          10 * this.bossRoundDamage * this.voidHomingMultiplier,
+        ),
+        speed: 8,
+        life: 5,
+        homing: 1.15,
+        glowScale: 1.15,
+      });
+    }
+    this.effects.castPulse(origin, 0xb14cff);
+    this.audio.enemyShoot();
+  }
+
+  private onBossMirror(): void {
+    this.spawnBossAdds('mirror', 1);
+    this.hud.showToast('镜像分身出现', 700);
+    this.effects.castPulse(
+      this.dummy.position.clone().add(new THREE.Vector3(0, 1, 0)),
+      0xb14cff,
+    );
   }
 
   private updateBossAdds(dt: number): void {
@@ -1561,7 +1682,7 @@ export class Game {
     this.hud.setKills(this.kills);
     this.hud.setGold(this.gold);
     this.hud.setTarget(false);
-    this.hud.showToast('星蚀守卫已击败 · BOSS CLEARED', 2200);
+    this.hud.showToast(`${this.bossDisplayName}已击败 · BOSS CLEARED`, 2200);
     this.audio.kill();
     this.effects.impact(this.dummy.position, 0xff5c7a, 2.2);
     this.enemyView.play('Death_A', 0.1, true);
@@ -1571,7 +1692,7 @@ export class Game {
     if (this.runRound < BOSS_ROUNDS) {
       this.upgradePending = true;
       this.hud.showToast(
-        `星蚀守卫已击败 · 准备进入轮回 ${this.runRound + 1}`,
+        `${this.bossDisplayName}已击败 · 准备进入 Boss ${this.runRound + 1}`,
         1400,
       );
       this.hud.showUpgrades(
@@ -1595,6 +1716,7 @@ export class Game {
       this.playerLevel,
       this.bestTime,
       isNewBest,
+      this.bossDisplayName,
     );
   }
 
@@ -1603,8 +1725,10 @@ export class Game {
     this.upgradePending = false;
     this.bossDefeated = false;
     this.runRound += 1;
+    this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
     this.dummy.respawn();
+    this.replaceEnemyView();
     this.player.teleport(this.respawnPosition);
     this.playerHealth = this.maxHealth;
     this.playerMana = this.maxMana;
@@ -1634,7 +1758,7 @@ export class Game {
     this.hud.hideUpgrades();
     this.hud.setTarget(false);
     this.hud.showToast(
-      `轮回 ${this.runRound} · 星蚀守卫 ${this.dummy.maxHealth} HP`,
+      `Boss ${this.runRound} · ${this.bossDisplayName} ${this.dummy.maxHealth} HP`,
       1800,
     );
     this.beginBossIntro(1.1);
@@ -1661,7 +1785,7 @@ export class Game {
     this.beam.hide();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     this.hud.setLowHealth(false);
-    this.hud.showDeath(this.deathRemaining);
+    this.hud.showDeath(this.deathRemaining, this.bossDisplayName);
     this.mageView.play('Death_A', 0.1, true);
     this.input.exitLock();
     this.audio.hurt();
@@ -1681,7 +1805,9 @@ export class Game {
     this.upgrades.clear();
     this.playerLevel = 1;
     this.playerXp = 0;
+    this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
+    this.replaceEnemyView();
     this.wPreview.setRadiusScale(1);
     this.hud.hideVictory();
     this.hud.hideUpgrades();

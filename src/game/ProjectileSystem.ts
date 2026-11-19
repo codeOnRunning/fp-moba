@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 
-export type ProjectileKind = 'basic' | 'q' | 'enemy';
+export type ProjectileKind = 'basic' | 'q' | 'enemy' | 'void';
 export type ProjectileOwner = 'player' | 'dummy';
 
 interface ProjectileConfig {
@@ -25,6 +25,7 @@ interface Projectile {
   life: number;
   maxLife: number;
   radius: number;
+  homing: number;
 }
 
 export interface ProjectileOverrides {
@@ -33,6 +34,7 @@ export interface ProjectileOverrides {
   life?: number;
   radius?: number;
   glowScale?: number;
+  homing?: number;
 }
 
 export interface ProjectileCallbacks {
@@ -72,6 +74,14 @@ const CONFIG: Record<ProjectileKind, ProjectileConfig> = {
     radius: 0.14,
     color: 0xff5c7a,
     glowScale: 0.82,
+  },
+  void: {
+    speed: 8,
+    damage: 11,
+    life: 4.5,
+    radius: 0.2,
+    color: 0xb14cff,
+    glowScale: 1.15,
   },
 };
 
@@ -167,6 +177,7 @@ export class ProjectileSystem {
       life: 0,
       maxLife: overrides.life ?? config.life,
       radius,
+      homing: overrides.homing ?? 0,
     });
   }
 
@@ -178,9 +189,25 @@ export class ProjectileSystem {
     dummyAlive: boolean,
     callbacks: ProjectileCallbacks,
     extraTargets: ProjectileExtraTarget[] = [],
+    playerPosition?: THREE.Vector3,
   ): void {
     for (let i = this.projectiles.length - 1; i >= 0; i -= 1) {
       const projectile = this.projectiles[i];
+
+      if (
+        projectile.homing > 0 &&
+        projectile.owner === 'dummy' &&
+        playerPosition
+      ) {
+        const desired = playerPosition
+          .clone()
+          .add(new THREE.Vector3(0, 0.55, 0))
+          .sub(projectile.position)
+          .normalize();
+        const turn = Math.min(1, projectile.homing * dt);
+        projectile.direction.lerp(desired, turn).normalize();
+      }
+
       const previous = projectile.position.clone();
       const travel = projectile.speed * dt;
 

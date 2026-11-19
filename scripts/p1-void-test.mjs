@@ -1,0 +1,26 @@
+﻿import { chromium } from 'playwright-core';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--ignore-gpu-blocklist']});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+await page.goto('http://127.0.0.1:4173/',{waitUntil:'networkidle'});
+await page.waitForFunction(()=>{const b=document.querySelector('#start-button');return b&&!b.disabled;},{timeout:60000});
+await page.locator('#start-button').click(); await page.waitForTimeout(4000);
+await page.evaluate(()=>window.__fpMoba?.damageDummy(1800)); await page.waitForTimeout(500);
+const upgrade=await page.locator('#upgrade-subtitle').textContent();
+await page.locator('.upgrade-option').first().click(); await page.waitForTimeout(2200);
+const voidState=await page.evaluate(()=>window.__fpMoba?.state());
+const targetName=await page.locator('#target-name').textContent();
+await page.screenshot({path:'screenshots/void-warlock.png'});
+await page.waitForTimeout(4500);
+const combat=await page.evaluate(()=>window.__fpMoba?.state());
+await page.evaluate(()=>window.__fpMoba?.damageDummy(1200)); await page.waitForTimeout(500);
+const phase2=await page.evaluate(()=>window.__fpMoba?.state());
+await page.screenshot({path:'screenshots/void-warlock-phase2.png'});
+await page.waitForTimeout(2200); await page.evaluate(()=>window.__fpMoba?.damageDummy(3000)); await page.waitForTimeout(700);
+const victoryVisible=await page.locator('#victory-screen').isVisible();
+const victoryTitle=await page.locator('#victory-title').textContent();
+const victorySummary=await page.locator('#victory-summary').textContent();
+console.log(JSON.stringify({upgrade,voidState,combat,targetName,phase2,victoryVisible,victoryTitle,victorySummary,errors},null,2));
+await browser.close();
+
+

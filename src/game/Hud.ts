@@ -25,6 +25,7 @@ export class Hud {
   private readonly targetHpText = element<HTMLSpanElement>('target-hp-text');
   private readonly targetHpFill = element<HTMLDivElement>('target-hp-fill');
   private readonly targetPhase = element<HTMLDivElement>('target-phase');
+  private readonly targetName = element<HTMLSpanElement>('target-name');
   private readonly bossIntro = element<HTMLDivElement>('boss-intro');
   private readonly bossIntroTitle = element<HTMLHeadingElement>('boss-intro-title');
   private readonly bossIntroSubtitle = element<HTMLParagraphElement>('boss-intro-subtitle');
@@ -35,6 +36,8 @@ export class Hud {
   private readonly victorySummary = element<HTMLParagraphElement>('victory-summary');
   private readonly victoryBest = element<HTMLParagraphElement>('victory-best');
   private readonly victoryRetry = element<HTMLButtonElement>('victory-retry-button');
+  private readonly victoryTitle = element<HTMLHeadingElement>('victory-title');
+  private readonly deathTitle = element<HTMLHeadingElement>('death-title');
   private readonly upgradeScreen = element<HTMLDivElement>('upgrade-screen');
   private readonly upgradeSubtitle = element<HTMLParagraphElement>('upgrade-subtitle');
   private readonly upgradeOptions = element<HTMLDivElement>('upgrade-options');
@@ -175,7 +178,13 @@ export class Hud {
     this.pulseAbility('q');
   }
 
-  setTarget(visible: boolean, hp = 0, max = 1, phase = '第一阶段'): void {
+  setTarget(
+    visible: boolean,
+    hp = 0,
+    max = 1,
+    phase = '第一阶段',
+    name = '星蚀守卫',
+  ): void {
     this.targetPanel.classList.toggle('hidden', !visible);
     if (!visible) return;
 
@@ -183,6 +192,7 @@ export class Hud {
     this.targetHpFill.style.width = `${ratio * 100}%`;
     this.targetHpText.textContent = `${Math.max(0, Math.ceil(hp))} / ${max}`;
     this.targetPhase.textContent = phase;
+    this.targetName.textContent = name;
   }
 
   showVictory(
@@ -191,7 +201,9 @@ export class Hud {
     level: number,
     best: number | null,
     newBest: boolean,
+    bossName = '星蚀守卫',
   ): void {
+    this.victoryTitle.textContent = `${bossName}已倒下`;
     this.victorySummary.textContent =
       `用时 ${formatSeconds(seconds)} · 剩余生命 ${Math.ceil(health)} · Lv.${level}`;
     this.victoryBest.textContent =
@@ -214,7 +226,7 @@ export class Hud {
     options: UpgradeDefinition[],
     onPick: (id: UpgradeDefinition['id']) => void,
   ): void {
-    this.upgradeSubtitle.textContent = `轮回 ${round} / 3 · 选择一个星辉强化`;
+    this.upgradeSubtitle.textContent = `第 ${round} 个 Boss 前 · 选择一个星辉强化`;
     this.upgradeOptions.replaceChildren();
 
     for (const option of options) {
@@ -350,7 +362,8 @@ export class Hud {
     this.pauseScreen.classList.add('hidden');
   }
 
-  showDeath(seconds: number): void {
+  showDeath(seconds: number, bossName = '星蚀守卫'): void {
+    this.deathTitle.textContent = `你被${bossName}击倒了`;
     this.deathCountdown.textContent = `正在重构星辉之躯… ${Math.max(0, Math.ceil(seconds))}`;
     this.respawnButton.disabled = true;
     this.respawnButton.textContent = '等待复活';
