@@ -139,6 +139,8 @@ export class Game {
   private shopOpen = false;
   private shopDamageBonus = 0;
   private shopHealthBonus = 0;
+  private shopCooldownBonus = 0;
+  private shopItemsBought = 0;
   private readonly laneMinions: LaneMinion[] = [];
   private readonly laneStructures: LaneStructure[] = [];
   private laneWaveTimer = 0;
@@ -210,7 +212,8 @@ export class Game {
     return Math.max(
       0.35,
       (1 - (this.playerLevel - 1) * 0.02) *
-        (1 - (this.upgrades.get('cooldown') ?? 0) * 0.1),
+        (1 - (this.upgrades.get('cooldown') ?? 0) * 0.1) *
+        (1 - this.shopCooldownBonus),
     );
   }
 
@@ -265,7 +268,7 @@ export class Game {
 
   private get bossDisplayName(): string {
     return this.gameMode === 'lane'
-      ? '敌方核心'
+      ? '敌方英雄'
       : BOSS_CONFIG[this.currentBossKind].name;
   }
 
@@ -454,6 +457,7 @@ export class Game {
         damageAdds: (amount: number) => void;
         damageLaneMinions: (amount: number) => void;
         damageLaneStructures: (amount: number) => void;
+        addGold: (amount: number) => void;
         damagePlayerFrom: (x: number, z: number) => void;
       };
     }).__fpMoba = {
@@ -488,6 +492,9 @@ export class Game {
           alive: structure.alive,
         })),
         gold: this.gold,
+        shopItemsBought: this.shopItemsBought,
+        shopDamageBonus: this.shopDamageBonus,
+        shopCooldownBonus: this.shopCooldownBonus,
         kills: this.kills,
         bossModifier: this.bossModifier,
         build: this.buildSummary,
@@ -567,6 +574,11 @@ export class Game {
             structure.takeDamage(amount);
           }
         }
+      },
+      addGold: (amount: number) => {
+        this.gold += amount;
+        this.hud.setGold(this.gold);
+        this.updateShopGold();
       },
       damagePlayerFrom: (x: number, z: number) => {
         const point = this.player.position.clone();
@@ -1020,7 +1032,9 @@ export class Game {
 
   private updateShopGold(): void {
     const gold = document.getElementById('shop-gold');
-    if (gold) gold.textContent = `金币 ${this.gold}`;
+    if (gold) {
+      gold.textContent = `金币 ${this.gold} · 装备 ${this.shopItemsBought}/6`;
+    }
   }
 
   private buyShopItem(item: string): void {
@@ -1028,6 +1042,9 @@ export class Game {
       damage: 30,
       health: 30,
       heal: 20,
+      staff: 50,
+      armor: 50,
+      boots: 40,
     };
     const cost = costs[item] ?? 0;
     if (this.gold < cost) {
@@ -1038,6 +1055,11 @@ export class Game {
       this.hud.showToast('生命已满', 700);
       return;
     }
+    const equipment = item !== 'heal';
+    if (equipment && this.shopItemsBought >= 6) {
+      this.hud.showToast('装备栏已满', 700);
+      return;
+    }
     this.gold -= cost;
     if (item === 'damage') {
       this.shopDamageBonus += 0.1;
@@ -1046,11 +1068,19 @@ export class Game {
       this.playerHealth += 25;
     } else if (item === 'heal') {
       this.playerHealth = Math.min(this.maxHealth, this.playerHealth + 40);
+    } else if (item === 'staff') {
+      this.shopDamageBonus += 0.15;
+    } else if (item === 'armor') {
+      this.shopHealthBonus += 40;
+      this.playerHealth += 40;
+    } else if (item === 'boots') {
+      this.shopCooldownBonus = Math.min(0.24, this.shopCooldownBonus + 0.08);
     }
+    if (equipment) this.shopItemsBought += 1;
     this.hud.setGold(this.gold);
     this.hud.setHealth(this.playerHealth, this.maxHealth);
     this.updateShopGold();
-    this.hud.showToast('购买成功', 700);
+    this.hud.showToast(equipment ? '装备已装备' : '购买成功', 700);
   }
 
   private openHelp(): void {
@@ -2531,6 +2561,8 @@ export class Game {
     this.hitStopRemaining = 0;
     this.shopDamageBonus = 0;
     this.shopHealthBonus = 0;
+    this.shopCooldownBonus = 0;
+    this.shopItemsBought = 0;
     this.dummy.setVariant(this.currentBossKind);
     this.dummy.setMaxHealth(this.bossRoundHealth);
     this.applyBossModifiers();
