@@ -213,12 +213,17 @@
           <div class="difficulty-row">
             <label for="difficulty-select">难度</label>
             <select id="difficulty-select">
-              <option value="easy">简单 · 伤害 -25%</option>
+              <option value="story">剧情 · 轻松体验（Boss 生命 -45%）</option>
+              <option value="easy">简单 · 伤害 -30%</option>
               <option value="normal" selected>普通 · 标准</option>
               <option value="hard">困难 · 伤害 +25%</option>
+              <option value="nightmare">噩梦 · 极限挑战</option>
             </select>
             <span id="boss-modifier-label">本局词缀：无词缀</span>
           </div>
+          <p id="difficulty-hint" class="difficulty-hint">
+            难度「普通」：标准战斗节奏
+          </p>
           <div class="control-grid">
             <div><kbd>WASD</kbd><span>移动</span></div>
             <div><kbd>鼠标</kbd><span>视角</span></div>
@@ -246,6 +251,17 @@
           <h2>已暂停</h2>
           <p class="lead">鼠标已释放。点击继续，重新锁定视角。</p>
           <p id="pause-stats" class="combat-stats"></p>
+          <div class="difficulty-row pause-difficulty-row">
+            <label for="pause-difficulty-select">难度</label>
+            <select id="pause-difficulty-select">
+              <option value="story">剧情 · 轻松体验</option>
+              <option value="easy">简单</option>
+              <option value="normal">普通</option>
+              <option value="hard">困难</option>
+              <option value="nightmare">噩梦</option>
+            </select>
+            <span class="pause-difficulty-note">可随时调整，Boss 血量百分比保留</span>
+          </div>
           <button id="resume-button" class="primary-button" type="button">
             点击继续
           </button>
@@ -264,6 +280,10 @@
           <div class="eyebrow">DEFEATED</div>
           <h2 id="death-title">你被星蚀守卫击倒了</h2>
           <p id="death-countdown" class="lead">正在重构星辉之躯… 3</p>
+          <p id="death-difficulty" class="death-difficulty">当前难度：普通</p>
+          <button id="death-lower-difficulty-button" class="ghost-button" type="button">
+            降低难度并复活
+          </button>
           <button id="respawn-button" class="primary-button" type="button" disabled>
             等待复活
           </button>

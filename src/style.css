@@ -452,6 +452,41 @@ body.low-health #vignette {
   color: var(--gold);
 }
 
+.difficulty-hint {
+  position: relative;
+  z-index: 1;
+  margin: 2px 0 10px;
+  color: rgba(190, 211, 236, 0.72);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.pause-difficulty-row {
+  justify-content: center;
+  margin: 14px 0 6px;
+}
+
+.pause-difficulty-note {
+  color: rgba(160, 188, 218, 0.55);
+  font-size: 8px;
+}
+
+.death-difficulty {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 2px;
+  color: rgba(190, 211, 236, 0.66);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+#death-lower-difficulty-button {
+  margin-top: 14px;
+}
+
 .help-grid {
   display: grid;
   gap: 8px;
@@ -1379,6 +1414,11 @@ h2 {
   border-color: rgba(151, 190, 245, 0.4);
   color: #e6f2ff;
   background: rgba(14, 25, 44, 0.55);
+}
+
+.ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .settings-screen {

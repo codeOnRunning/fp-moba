@@ -44,7 +44,9 @@ import {
 import {
   BOSS_MODIFIERS,
   DIFFICULTY_CONFIG,
+  isDifficulty,
   pickBossModifier,
+  previousDifficulty,
   readBestScore,
   readDifficulty,
   saveBestScore,
@@ -137,7 +139,7 @@ export class Game {
   private bestTime: number | null = readBestTime();
   private bestScore: number | null = readBestScore();
   private difficulty: Difficulty = readDifficulty();
-  private bossModifier: BossModifier = pickBossModifier();
+  private bossModifier: BossModifier = pickBossModifier(this.difficulty);
   private gameMode: 'boss' | 'lane' = 'boss';
   private shopOpen = false;
   private shopDamageBonus = 0;
@@ -194,12 +196,12 @@ export class Game {
   private readonly respawnPosition = new THREE.Vector3(-20, 0.85, 0);
 
   private get maxHealth(): number {
-    return (
+    const base =
       PLAYER_MAX_HEALTH +
       (this.playerLevel - 1) * 8 +
       (this.upgrades.get('vitality') ?? 0) * 25 +
-      this.shopHealthBonus
-    );
+      this.shopHealthBonus;
+    return Math.round(base * this.difficultyConfig.playerHealthScale);
   }
 
   private get maxMana(): number {
@@ -211,7 +213,11 @@ export class Game {
   }
 
   private get damageMultiplier(): number {
-    return (1 + (this.playerLevel - 1) * 0.045) * (1 + this.shopDamageBonus);
+    return (
+      (1 + (this.playerLevel - 1) * 0.045) *
+      (1 + this.shopDamageBonus) *
+      this.difficultyConfig.playerDamageScale
+    );
   }
 
   private get cooldownMultiplier(): number {
@@ -279,9 +285,9 @@ export class Game {
   }
 
   private get bossRoundHealth(): number {
-    return this.gameMode === 'lane'
-      ? 1200
-      : BOSS_CONFIG[this.currentBossKind].health;
+    const baseHealth =
+      this.gameMode === 'lane' ? 1200 : BOSS_CONFIG[this.currentBossKind].health;
+    return Math.max(1, Math.round(baseHealth * this.difficultyConfig.bossHealthScale));
   }
 
   private get difficultyConfig() {
@@ -428,6 +434,8 @@ export class Game {
     );
     this.applySettings(this.settings, false);
 
+    this.playerHealth = this.maxHealth;
+    this.playerMana = this.maxMana;
     this.hud.setHealth(this.playerHealth, this.maxHealth);
     this.hud.setMana(this.playerMana, this.maxMana);
     this.hud.setLevel(this.playerLevel);
@@ -467,6 +475,7 @@ export class Game {
         damageLaneStructures: (amount: number) => void;
         addGold: (amount: number) => void;
         damagePlayerFrom: (x: number, z: number) => void;
+        setDifficulty: (difficulty: string) => void;
       };
     }).__fpMoba = {
       state: () => ({
@@ -596,6 +605,9 @@ export class Game {
         point.y += 0.2;
         this.onPlayerHit(5, point, 'enemy');
       },
+      setDifficulty: (difficulty: string) => {
+        if (isDifficulty(difficulty)) this.changeDifficulty(difficulty);
+      },
     };
   }
 
@@ -673,6 +685,9 @@ export class Game {
       modeSelect.value = this.gameMode;
       modeSelect.addEventListener('change', () => {
         this.gameMode = modeSelect.value === 'lane' ? 'lane' : 'boss';
+        if (!this.started) {
+          this.dummy.setMaxHealth(this.bossRoundHealth);
+        }
         this.updateStartMeta();
       });
     }
@@ -682,15 +697,28 @@ export class Game {
     if (difficultySelect) {
       difficultySelect.value = this.difficulty;
       difficultySelect.addEventListener('change', () => {
-        const value = difficultySelect.value;
-        if (value === 'easy' || value === 'normal' || value === 'hard') {
-          this.difficulty = value;
-          saveDifficulty(value);
-          this.applyBossModifiers();
-          this.updateStartMeta();
+        if (isDifficulty(difficultySelect.value)) {
+          this.changeDifficulty(difficultySelect.value);
         }
       });
     }
+    const pauseDifficultySelect = document.getElementById(
+      'pause-difficulty-select',
+    ) as HTMLSelectElement | null;
+    if (pauseDifficultySelect) {
+      pauseDifficultySelect.value = this.difficulty;
+      pauseDifficultySelect.addEventListener('change', () => {
+        if (isDifficulty(pauseDifficultySelect.value)) {
+          this.changeDifficulty(pauseDifficultySelect.value);
+        }
+      });
+    }
+    document
+      .getElementById('death-lower-difficulty-button')
+      ?.addEventListener('click', () => {
+        this.lowerDifficultyAndRespawn();
+      });
+    this.syncDifficultyUi();
     this.updateStartMeta();
     document.getElementById('pause-help-button')?.addEventListener('click', () => {
       this.openHelp();
@@ -722,7 +750,10 @@ export class Game {
     this.hud.hidePause();
     this.audio.resume();
     this.audio.startMusic(1);
-    this.hud.showToast('舒适模式：第三人称 · FOV 70 · 无武器晃动 · V 切换第一人称', 3200);
+    this.hud.showToast(
+      `难度：${this.difficultyConfig.label} · 第三人称 · FOV 70 · V 切换第一人称`,
+      3200,
+    );
     if (this.gameMode === 'lane') {
       this.setupLaneMode();
     } else {
@@ -776,7 +807,7 @@ export class Game {
     this.laneEnemyAttackTimer = 1.2;
     this.laneEnemyRespawnTimer = 0;
     this.dummy.setVariant('star');
-    this.dummy.setMaxHealth(1200);
+    this.dummy.setMaxHealth(this.bossRoundHealth);
     this.applyBossModifiers();
     this.dummy.respawn();
     this.replaceEnemyView();
@@ -815,7 +846,7 @@ export class Game {
 
   private respawnLaneEnemy(): void {
     this.dummy.setVariant('star');
-    this.dummy.setMaxHealth(1200);
+    this.dummy.setMaxHealth(this.bossRoundHealth);
     this.dummy.respawn();
     this.bossDefeated = false;
     this.laneEnemyAttackTimer = 1.2;
@@ -890,7 +921,7 @@ export class Game {
       .add(new THREE.Vector3(0, 0.25, 0));
     const direction = aim.sub(origin).normalize();
     this.projectiles.spawn(origin, direction, 'enemy', 'dummy', {
-      damage: 6,
+      damage: Math.round(6 * this.bossRoundDamage),
       speed: 12 * this.difficultyConfig.projectileSpeedScale,
     });
     this.effects.muzzle(origin, 0xff5c7a);
@@ -1044,6 +1075,7 @@ export class Game {
     this.qCharge = 0;
     this.cancelWAim();
     this.input.exitLock();
+    this.syncDifficultyUi();
     this.hud.showPause();
   }
 
@@ -1074,11 +1106,100 @@ export class Game {
         `本局词缀：${this.modifierDefinition.label} · ` +
         this.modifierDefinition.description;
     }
+    const hint = document.getElementById('difficulty-hint');
+    if (hint) {
+      hint.textContent = `难度「${this.difficultyConfig.label}」：${this.difficultyConfig.description}`;
+    }
   }
 
   private rollBossModifier(): void {
-    this.bossModifier = pickBossModifier();
+    this.bossModifier = pickBossModifier(this.difficulty);
     this.updateStartMeta();
+  }
+
+  /**
+   * Applies a difficulty change immediately, even mid-run. Boss HP keeps its
+   * current percentage so lowering the difficulty cannot reset an encounter.
+   */
+  private changeDifficulty(next: Difficulty): void {
+    if (next === this.difficulty) {
+      this.syncDifficultyUi();
+      return;
+    }
+
+    const previousMaxHealth = this.maxHealth;
+    const bossHealthRatio =
+      this.dummy.maxHealth > 0
+        ? Math.max(0, Math.min(1, this.dummy.health / this.dummy.maxHealth))
+        : 1;
+
+    this.difficulty = next;
+    saveDifficulty(next);
+
+    const newMaxHealth = this.maxHealth;
+    if (newMaxHealth > previousMaxHealth) {
+      this.playerHealth = Math.min(
+        newMaxHealth,
+        this.playerHealth + (newMaxHealth - previousMaxHealth),
+      );
+    } else {
+      this.playerHealth = Math.min(this.playerHealth, newMaxHealth);
+    }
+
+    // Story mode always runs without a random modifier.
+    if (next === 'story') this.bossModifier = 'none';
+
+    if (this.dummy.alive) {
+      this.dummy.setMaxHealth(this.bossRoundHealth);
+      this.dummy.health = Math.max(1, Math.round(this.dummy.maxHealth * bossHealthRatio));
+    }
+    this.applyBossModifiers();
+    this.syncDifficultyUi();
+    this.updateStartMeta();
+    this.hud.setHealth(this.playerHealth, this.maxHealth);
+    this.hud.setMana(this.playerMana, this.maxMana);
+    this.hud.showToast(
+      `难度已调整为「${this.difficultyConfig.label}」 · ${this.difficultyConfig.description}`,
+      1800,
+    );
+  }
+
+  private syncDifficultyUi(): void {
+    const startSelect = document.getElementById(
+      'difficulty-select',
+    ) as HTMLSelectElement | null;
+    if (startSelect) startSelect.value = this.difficulty;
+    const pauseSelect = document.getElementById(
+      'pause-difficulty-select',
+    ) as HTMLSelectElement | null;
+    if (pauseSelect) pauseSelect.value = this.difficulty;
+
+    const deathLabel = document.getElementById('death-difficulty');
+    if (deathLabel) {
+      deathLabel.textContent = `当前难度：${this.difficultyConfig.label}`;
+    }
+    const lowerButton = document.getElementById(
+      'death-lower-difficulty-button',
+    ) as HTMLButtonElement | null;
+    if (lowerButton) {
+      const easier = previousDifficulty(this.difficulty);
+      lowerButton.disabled = easier === null;
+      lowerButton.textContent = easier
+        ? `降低难度至「${DIFFICULTY_CONFIG[easier].label}」并复活`
+        : '已是最低难度';
+    }
+  }
+
+  private lowerDifficultyAndRespawn(): void {
+    const easier = previousDifficulty(this.difficulty);
+    if (!easier) {
+      this.hud.showToast('已经是最低难度「剧情」', 1400);
+      return;
+    }
+    this.changeDifficulty(easier);
+    if (this.playerDead) {
+      this.respawn();
+    }
   }
 
   private openShop(): void {
@@ -2552,7 +2673,7 @@ export class Game {
 
   private onDummyShoot(shot: DummyShot): void {
     this.projectiles.spawn(shot.origin, shot.direction, 'enemy', 'dummy', {
-      damage: 7,
+      damage: Math.round(7 * this.bossRoundDamage),
       speed: 13 * this.difficultyConfig.projectileSpeedScale,
     });
     this.effects.muzzle(shot.origin, 0xff5c7a);
@@ -2715,6 +2836,7 @@ export class Game {
     this.beam.hide();
     for (const zone of this.gravityZones.splice(0)) zone.dispose();
     this.hud.setLowHealth(false);
+    this.syncDifficultyUi();
     this.hud.showDeath(this.deathRemaining, this.bossDisplayName);
     this.mageView.play('Death_A', 0.1, true);
     this.input.exitLock();
