@@ -52,6 +52,10 @@ export class Hud {
   private readonly markPips = Array.from(
     this.markStacks.querySelectorAll<HTMLSpanElement>('span'),
   );
+  private readonly comboPips = element<HTMLDivElement>('combo-pips');
+  private readonly comboPipEls = Array.from(
+    this.comboPips.querySelectorAll<HTMLSpanElement>('span'),
+  );
   private readonly damageLayer = element<HTMLDivElement>('damage-layer');
   private readonly toastEl = element<HTMLDivElement>('toast');
   private readonly abilityElements = {
@@ -176,6 +180,15 @@ export class Hud {
     this.markStacks.classList.toggle('hidden', stacks <= 0);
     this.markPips.forEach((pip, index) => {
       pip.classList.toggle('active', index < stacks);
+    });
+  }
+
+  setComboPips(streak: number): void {
+    const ready = streak >= 3;
+    this.comboPips.classList.toggle('hidden', streak <= 0 && !ready);
+    this.comboPips.classList.toggle('ready', ready);
+    this.comboPipEls.forEach((pip, index) => {
+      pip.classList.toggle('active', index < streak);
     });
   }
 

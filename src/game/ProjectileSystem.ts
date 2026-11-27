@@ -27,6 +27,7 @@ interface Projectile {
   maxLife: number;
   radius: number;
   homing: number;
+  noStreak: boolean;
 }
 
 export interface ProjectileOverrides {
@@ -36,10 +37,16 @@ export interface ProjectileOverrides {
   radius?: number;
   glowScale?: number;
   homing?: number;
+  noStreak?: boolean;
 }
 
 export interface ProjectileCallbacks {
-  onDummyHit: (damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
+  onDummyHit: (
+    damage: number,
+    point: THREE.Vector3,
+    kind: ProjectileKind,
+    noStreak?: boolean,
+  ) => void;
   onPlayerHit: (damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
   onWallHit: (point: THREE.Vector3, kind: ProjectileKind) => void;
   onAddHit?: (targetId: number, damage: number, point: THREE.Vector3, kind: ProjectileKind) => void;
@@ -187,6 +194,7 @@ export class ProjectileSystem {
       maxLife: overrides.life ?? config.life,
       radius,
       homing: overrides.homing ?? 0,
+      noStreak: overrides.noStreak ?? false,
     });
   }
 
@@ -254,7 +262,7 @@ export class ProjectileSystem {
           dummyAlive &&
           hit.collider.handle === dummyCollider.handle
         ) {
-          callbacks.onDummyHit(projectile.damage, point, projectile.kind);
+          callbacks.onDummyHit(projectile.damage, point, projectile.kind, projectile.noStreak);
         } else if (
           projectile.owner === 'dummy' &&
           hit.collider.handle === playerCollider.handle

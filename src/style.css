@@ -681,6 +681,43 @@ body.low-health #vignette {
   box-shadow: 0 0 10px rgba(232, 199, 122, 0.75);
 }
 
+.combo-pips {
+  position: absolute;
+  top: calc(50% + 44px);
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  gap: 5px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.combo-pips.hidden {
+  display: none;
+}
+
+.combo-pips span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(159, 232, 255, 0.4);
+  background: rgba(7, 13, 24, 0.55);
+  transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.combo-pips span.active {
+  border-color: #9fe8ff;
+  background: #9fe8ff;
+  box-shadow: 0 0 10px rgba(159, 232, 255, 0.8);
+}
+
+.combo-pips.ready span {
+  border-color: var(--gold-strong);
+  background: var(--gold-strong);
+  box-shadow: 0 0 12px rgba(232, 199, 122, 0.85);
+  transform: scale(1.25);
+}
+
 @keyframes hitmarkerPop {
   0% {
     opacity: 1;

@@ -167,6 +167,8 @@ export class Game {
   private qHeld = false;
   private markStacks = 0;
   private markTimer = 0;
+  // 普攻连击：累计基础攻击命中次数，达到 3 次后，下一次普攻触发三连发。
+  private basicHitStreak = 0;
   private debugGravity = '';
   private debugBossAttack = '';
   private invulnerableTime = 0;
@@ -476,6 +478,8 @@ export class Game {
         addGold: (amount: number) => void;
         damagePlayerFrom: (x: number, z: number) => void;
         setDifficulty: (difficulty: string) => void;
+        hitBasic: () => void;
+        fireBasic: () => void;
       };
     }).__fpMoba = {
       state: () => ({
@@ -540,6 +544,7 @@ export class Game {
         eCooldown: this.eCooldown,
         rCooldown: this.rCooldown,
         markStacks: this.markStacks,
+        basicHitStreak: this.basicHitStreak,
         beamActive: this.beamActiveTime > 0,
         debugGravity: this.debugGravity,
         keys: [...this.input.keys],
@@ -561,6 +566,17 @@ export class Game {
           this.dummy.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
           'q',
         );
+      },
+      hitBasic: () => {
+        this.onDummyHit(
+          0,
+          this.dummy.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
+          'basic',
+        );
+      },
+      fireBasic: () => {
+        this.basicCooldown = 0;
+        this.tryBasicAttack();
       },
       damagePlayer: (amount: number) => {
         this.onPlayerHit(
@@ -1650,7 +1666,8 @@ export class Game {
       this.dummy.collider,
       this.dummy.alive,
       {
-        onDummyHit: (damage, point, kind) => this.onDummyHit(damage, point, kind),
+        onDummyHit: (damage, point, kind, noStreak) =>
+          this.onDummyHit(damage, point, kind, noStreak),
         onPlayerHit: (damage, point, kind) => this.onPlayerHit(damage, point, kind),
         onWallHit: (point, kind) => this.onWallHit(point, kind),
         onAddHit: (id, damage, point, kind) => {
@@ -1812,6 +1829,7 @@ export class Game {
     this.hud.setKills(this.kills);
     this.hud.setExperience(this.playerXp, this.xpToNext, this.playerLevel);
     this.hud.setMarks(this.markStacks);
+    this.hud.setComboPips(this.basicHitStreak);
 
     const dummyPosition = this.dummy.position;
     const toDummy = dummyPosition
@@ -2124,14 +2142,36 @@ export class Game {
     if (this.basicCooldown > 0) return;
 
     const shot = this.getAimRay();
-    this.projectiles.spawn(shot.origin, shot.direction, 'basic', 'player');
+    const staffTip = this.getStaffTipWorldPosition();
+    const burst = this.basicHitStreak >= 3;
+
+    if (burst) {
+      // 第 4 次点击：三连发，略微扇形散开，伤害更高，随后连击清零重新累计。
+      this.basicHitStreak = 0;
+      const spread = 0.045;
+      for (let i = -1; i <= 1; i += 1) {
+        const direction = shot.direction
+          .clone()
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), spread * i);
+        this.projectiles.spawn(shot.origin, direction, 'basic', 'player', {
+          damage: 14 * 1.5,
+          glowScale: 0.8,
+          noStreak: true,
+        });
+      }
+      this.hud.showToast('三连星弧', 700);
+      this.effects.impact(staffTip, 0xe8c77a, 0.9);
+    } else {
+      this.projectiles.spawn(shot.origin, shot.direction, 'basic', 'player');
+    }
+
     this.basicCooldown = BASIC_COOLDOWN / this.attackSpeedMultiplier;
     this.viewmodelKick = Math.max(this.viewmodelKick, 0.42);
     this.mageView.play('1H_Ranged_Shoot', 0.06, true);
     this.mageActionLock = 0.26;
     this.hud.pulseBasic();
     this.audio.shoot();
-    this.effects.muzzle(this.getStaffTipWorldPosition(), 0x9fe8ff);
+    this.effects.muzzle(staffTip, burst ? 0xe8c77a : 0x9fe8ff);
   }
 
   private getAimRay(): { origin: THREE.Vector3; direction: THREE.Vector3 } {
@@ -2162,6 +2202,7 @@ export class Game {
     damage: number,
     point: THREE.Vector3,
     kind: ProjectileKind,
+    noStreak = false,
   ): void {
     if (this.bossInvulnerableTime > 0.001) {
       this.hud.showToast('Boss 护盾 / 登场无敌', 450);
@@ -2174,6 +2215,11 @@ export class Game {
     );
     if (kind === 'q' && this.qMarkSynergy) {
       finalDamage = Math.round(finalDamage * 1.15);
+    }
+
+    // 普攻命中累计连击，为下一次三连发蓄势（三连发自身的子弹不计数）。
+    if (kind === 'basic' && !noStreak) {
+      this.basicHitStreak = Math.min(3, this.basicHitStreak + 1);
     }
 
     if (kind === 'basic' && this.markStacks >= 3) {
@@ -2894,6 +2940,7 @@ export class Game {
     this.cancelWAim();
     this.markStacks = 0;
     this.markTimer = 0;
+    this.basicHitStreak = 0;
     this.invulnerableTime = 0;
     this.beamActiveTime = 0;
     this.beam.hide();
